@@ -1,0 +1,10 @@
+Prediction of Klebsiella phage-host specificity at the strain level: This paper focuses on identifying effective phages against Klebsiella pneumoniae. Data of this research paper is not able to used for PhageMatch, because it only focus on one specific strain of Klebsi, not a broad range of strains, I need data that can be used for braoder range of applications. 
+
+
+Predictive phage therapy for Escherichia coli urinary tract infections: Cocktail selection for therapy based on machine learning models:
+
+!!!Can't download the data from the link provided in the paper.
+https://enterobase.warwick.ac.uk/species/ecoli/search_strains?query=workspace:97040
+
+Enterobase Tool Kit:
+https://github.com/zheminzhou/EToKi
