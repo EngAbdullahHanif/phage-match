@@ -4,6 +4,8 @@ import logging
 from scripts.preprocessing.load_data import load_sequences
 from scripts.preprocessing.parallel_utils import parallel_process, process_one_hot, process_kmers
 from scripts.embeddings import process_embeddings
+from scripts.dimensionality_reduction import apply_pca, apply_tsne, apply_autoencoder
+
 
 
 # Set up logging
@@ -83,15 +85,42 @@ def run_pipeline(config_path):
     #     parallel_process(process_kmers, kmer_data, config["num_workers"])
 
     
-    # After processing k-mers, generate DNA2Vec embeddings
-    logging.info("Generating DNA2Vec embeddings")
-    process_embeddings(
-        kmer_dir=config["input_dirs"]["kmer_frequencies"],
-        embedding_file=config["embedding_file"],
-        output_dir=config["output_dirs"]["embeddings"]
-    )
-    logging.info("DNA2Vec embeddings generation complete")
+    # # After processing k-mers, generate DNA2Vec embeddings
+    # logging.info("Generating DNA2Vec embeddings")
+    # process_embeddings(
+    #     kmer_dir=config["input_dirs"]["kmer_frequencies"],
+    #     embedding_file=config["embedding_file"],
+    #     output_dir=config["output_dirs"]["embeddings"]
+    # )
+    # logging.info("DNA2Vec embeddings generation complete")
 
+
+    # Apply dimensionality reduction techniques
+    logging.info("Applying dimensionality reduction techniques")
+    # Apply PCA
+    apply_pca(
+        input_dir=config["input_dirs"]["dna2vec_embeddings"],
+        output_dir=config["output_dirs"]["reduced"] + "/pca/dna2vec_embeddings/",
+        n_components=config["dimensionality_reduction"]["pca_components"]
+    )
+
+    # Apply t-SNE
+    apply_tsne(
+        input_dir=config["input_dirs"]["dna2vec_embeddings"],
+        output_dir=config["output_dirs"]["reduced"] + "/tsne/dna2vec_embeddings/",
+        n_components=config["dimensionality_reduction"]["tsne_components"],
+        perplexity=config["dimensionality_reduction"]["tsne_perplexity"]
+    )
+
+    # Apply Autoencoders
+    apply_autoencoder(
+        input_dir=config["input_dirs"]["dna2vec_embeddings"],
+        output_dir=config["output_dirs"]["reduced"] + "/autoencoders/dna2vec_embeddings/",
+        hidden_units=config["dimensionality_reduction"]["autoencoder_hidden_units"],
+        epochs=config["dimensionality_reduction"]["autoencoder_epochs"],
+        batch_size=config["dimensionality_reduction"]["autoencoder_batch_size"]
+    )
+    logging.info("Dimensionality reduction complete")
 
 
     logging.info("pipeline complete")

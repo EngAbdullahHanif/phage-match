@@ -4,13 +4,24 @@ input_dirs:
   gene_annotations_phage: "data/raw/gene_annotations/phage_genomes"
   phage_genomes: "data/raw/phage_genomes"
   kmer_frequencies: "data/processed/kmer_frequencies"
+  dna2vec_embeddings: "data/processed/embeddings"
 
 output_dirs:
   one_hot_encoded: "data/processed/one_hot_encoded"
   kmer_frequencies: "data/processed/kmer_frequencies"
   embeddings: "data/processed/embeddings"
+  reduced: "data/processed/reduced"
 
 kmer_k: 3
 num_workers: 4
 
 embedding_file: "models/pretrained/dna2vec.txt"
+
+dimensionality_reduction:
+  techniques: ["pca", "tsne", "autoencoder"]
+  pca_components: 2
+  tsne_perplexity: 30
+  tsne_components: 2
+  autoencoder_hidden_units: 64
+  autoencoder_epochs: 50
+  autoencoder_batch_size: 32
