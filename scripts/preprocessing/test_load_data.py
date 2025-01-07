@@ -26,32 +26,64 @@ def embed_kmers(kmer_file, embeddings):
         kmer_freqs = json.load(f)
     
     # initialize embedded_vector with the same shape as the first embedding vector in the embeddings dictionary
-    embedded_vector = np.zeros_like(next(iter(embeddings.values())))
+    first_embedding = None
+    for emb in embeddings.values():
+        emb_array = np.array(emb, dtype=np.float64).flatten()
+        if emb_array.ndim == 1 and len(emb_array) == 100:  # Adjust 100 to the expected embedding size
+            first_embedding = emb_array
+            break
+
+    if first_embedding is None:
+        raise ValueError("No valid embeddings found in the input.")
+
+    # Initialize embedded vector
+    embedded_vector = np.zeros_like(first_embedding)
     total_weight = 0.0
 
-    # !debug
-    print(f"Initialized embedded_vector with shape: {embedded_vector.shape}")
-    
+    # print(f"Shape of embeddings.values(): {first_embedding.shape}")
+    # print(f"Initialized embedded_vector with shape: {embedded_vector.shape}")
+
+    # Validate all embeddings
+    for kmer, emb in embeddings.items():
+        emb_array = np.array(emb, dtype=np.float64).flatten()
+        if emb_array.shape != first_embedding.shape:
+            print(f"Skipping inconsistent embedding for {kmer}: {emb_array.shape}")
+            continue
+
+
+    # count = 0
     for kmer, freq in kmer_freqs.items():
         #! debug
-        print(f"kmer: {kmer}, freq: {freq}")
+        # print(f"kmer: {kmer}, freq: {freq}")
+        # freq = float(freq)
 
         if kmer in embeddings:
-            embedded_vector += freq * embeddings[kmer]
+            embedding = np.array(embeddings[kmer], dtype=np.float64)  # Convert to numpy array
+
+            # if embedding.shape == embedded_vector.shape:
+            if embedding.shape != embedded_vector.shape:
+                raise ValueError(f"Shape mismatch: embedding {embedding.shape} vs embedded_vector {embedded_vector.shape}")
+
+            embedded_vector += freq * embedding
+            total_weight += freq
             #! debug
             print(f"embedded_vector: {embedded_vector}")
             print(f"embeddings[kmer]: {embeddings[kmer]}")
-            total_weight += freq
+            
+            #! debuging
+            #after iterating two times, exit the loop
+            # count += 1
+            # if count == 2:
+            #     break
     
-    print(f"Total weight: {total_weight}")
-    print(f"Final embedded_vector: {embedded_vector}")
 
     # Normalize the weighted sum
     if total_weight > 0:
+        print(f"Total weight: {total_weight}")
+        print(f"Final embedded_vector: {embedded_vector}")
         embedded_vector /= total_weight
     
     return embedded_vector
-
 
 
 def save_embedding(seq_id, vector, output_dir):
