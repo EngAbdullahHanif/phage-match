@@ -177,9 +177,13 @@ HIPSTER/
 #interproscan
 interproscan-5.65-97.0
 
-# PHACTS     
+
+
+prosite
 PHACTS/
 
-# prosite
-prosite/
+# db
+db/
+
+Miniconda3-latest-MacOSX-x86_64.sh
 
