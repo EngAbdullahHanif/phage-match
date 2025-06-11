@@ -1,0 +1,16 @@
+name: interproscan_mac
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - hmmer=3.3.2
+  - openjdk=11
+  - perl
+  - libgcc-ng
+  - libstdcxx-ng
+  - biopython
+  - pip
+  - pip:
+      - tqdm

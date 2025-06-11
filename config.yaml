@@ -1,27 +1,44 @@
-input_dirs:
-  bacterial_genomes: "data/raw/bacterial_genomes"
-  gene_annotations_bacterial: "data/raw/gene_annotations/bacterial_genomes"
-  gene_annotations_phage: "data/raw/gene_annotations/phage_genomes"
-  phage_genomes: "data/raw/phage_genomes"
-  kmer_frequencies: "data/processed/kmer_frequencies"
-  dna2vec_embeddings: "data/processed/embeddings"
+phaster_results: data/phaster_results
+phage_annotations: data/processed/advanced/phage_annotations
+hhsearch_out: data/processed/advanced/hhsearch
+uniclust_db: /absolute/path/to/uniclust30_2020_06
+pdb70_db:    /absolute/path/to/pdb70
+colabfold_cache: colabfold_cache
+colabfold_out: data/processed/advanced/colabfold_results
+foldseek_out:  data/processed/advanced/foldseek_results
+host_faa: data/processed/annotations/phage_genomes/\
+ESC_LB6535AA_AS_NODE_10_length_146217_cov_4.841084_annotation/\
+ESC_LB6535AA_AS_NODE_10_length_146217_cov_4.841084.faa
 
-output_dirs:
-  one_hot_encoded: "data/processed/one_hot_encoded"
-  kmer_frequencies: "data/processed/kmer_frequencies"
-  embeddings: "data/processed/embeddings"
-  reduced: "data/processed/reduced"
 
-kmer_k: 3
-num_workers: 4
 
-embedding_file: "models/pretrained/dna2vec.txt"
+# input_dirs:
+#   bacterial_genomes: "data/raw/bacterial_genomes"
+#   gene_annotations_bacterial: "data/raw/gene_annotations/bacterial_genomes"
+#   gene_annotations_phage: "data/raw/gene_annotations/phage_genomes"
+#   phage_genomes: "data/raw/phage_genomes"
+#   kmer_frequencies: "data/processed/kmer_frequencies"
+#   dna2vec_embeddings: "data/processed/embeddings"
 
-dimensionality_reduction:
-  techniques: ["pca", "tsne", "autoencoder"]
-  pca_components: 2
-  tsne_perplexity: 30
-  tsne_components: 2
-  autoencoder_hidden_units: 64
-  autoencoder_epochs: 50
-  autoencoder_batch_size: 32
+# output_dirs:
+#   one_hot_encoded: "data/processed/one_hot_encoded"
+#   kmer_frequencies: "data/processed/kmer_frequencies"
+#   embeddings: "data/processed/embeddings"
+#   reduced: "data/processed/reduced"
+
+# kmer_k: 3
+# num_workers: 4
+
+# embedding_file: "models/pretrained/dna2vec.txt"
+
+# dimensionality_reduction:
+#   techniques: ["pca", "tsne", "autoencoder"]
+#   pca_components: 2
+#   tsne_perplexity: 30
+#   tsne_components: 2
+#   autoencoder_hidden_units: 64
+#   autoencoder_epochs: 50
+#   autoencoder_batch_size: 32
+
+
+
