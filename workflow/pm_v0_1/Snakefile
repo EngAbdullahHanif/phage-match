@@ -59,13 +59,33 @@ rule aggregate_rankings:
     run:
         out_dir = pathlib.Path(output.ranking).parent
         out_dir.mkdir(parents=True, exist_ok=True)
-        # Simple deterministic mock ranking for all phages
-        rows = [{"phage_id": pid, "score": 1.0} for pid in PHAGE_IDS]
-        ranking_df = pd.DataFrame(rows if rows else [{"phage_id": "none", "score": 0.0}])
+        # Stable mock contract for ranking.csv
+        rows = [
+            {
+                "host_id": wildcards.host_id,
+                "phage_id": pid,
+                "rank": idx + 1,
+                "confidence_score": 1.0,
+                "primary_reason": "mock",
+                "safety_flags": "",
+            }
+            for idx, pid in enumerate(PHAGE_IDS)
+        ]
+        if not rows:
+            rows = [{
+                "host_id": wildcards.host_id,
+                "phage_id": "none",
+                "rank": 1,
+                "confidence_score": 0.0,
+                "primary_reason": "mock",
+                "safety_flags": "",
+            }]
+        ranking_df = pd.DataFrame(rows)
         ranking_df.to_csv(output.ranking, index=False)
 
         # Evidence bundle with reproducibility metadata
         evidence = {
+            "pipeline_version": "0.1.0-mock",
             "mock": bool(TEST_MODE),
             "run_id": iso_now(),
             "test_mode": bool(TEST_MODE),
@@ -73,6 +93,11 @@ rule aggregate_rankings:
             "manifest_hashes": {
                 "phages": sha256_file(PHAGE_MANIFEST),
                 "hosts": sha256_file(HOST_MANIFEST),
+            },
+            "snapshots": {
+                "modules": config.get("modules", {}),
+                "params": config.get("params", {}),
+                "versions": config.get("versions", {}),
             },
         }
         with pathlib.Path(output.evidence).open("w") as f:
