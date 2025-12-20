@@ -44,17 +44,23 @@ rule all:
         expand(RESULTS_DIR / "{host_id}" / "ranking.csv", host_id=HOST_IDS),
         expand(RESULTS_DIR / "{host_id}" / "evidence_bundle.json", host_id=HOST_IDS)
 
-rule mock_structures:
+rule mock_phage_structure:
     input:
-        phage_fasta=lambda wildcards: phages_df.set_index("phage_id").loc[wildcards.phage_id, "fasta"] if not phages_df.empty else "missing",
+        phage_fasta=lambda wildcards: phages_df.set_index("phage_id").loc[wildcards.phage_id, "fasta"] if not phages_df.empty else "missing"
+    output:
+        phage_pdb=CACHE_DIR / "phages" / "{phage_id}" / "mock" / "structures" / "{phage_id}.pdb"
+    run:
+        pathlib.Path(output.phage_pdb).parent.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(output.phage_pdb).write_text(f"MOCK {pathlib.Path(output.phage_pdb).stem}\n")
+
+rule mock_host_structure:
+    input:
         host_fasta=lambda wildcards: hosts_df.set_index("host_id").loc[wildcards.host_id, "genome_fna"] if not hosts_df.empty else "missing"
     output:
-        CACHE_DIR / "phages" / "{phage_id}" / "mock" / "structures" / "{phage_id}.pdb",
-        CACHE_DIR / "hosts" / "{host_id}" / "mock" / "structures" / "{host_id}.pdb"
+        host_pdb=CACHE_DIR / "hosts" / "{host_id}" / "mock" / "structures" / "{host_id}.pdb"
     run:
-        for path in output:
-            pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
-            pathlib.Path(path).write_text(f"MOCK {pathlib.Path(path).stem}\n")
+        pathlib.Path(output.host_pdb).parent.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(output.host_pdb).write_text(f"MOCK {pathlib.Path(output.host_pdb).stem}\n")
 
 rule sourmash_sketch_phage:
     input:
@@ -118,8 +124,8 @@ rule sourmash_compare:
 
 rule aggregate_rankings:
     input:
-        mocks=expand(CACHE_DIR / "phages" / "{phage_id}" / "mock" / "structures" / "{phage_id}.pdb", phage_id=PHAGE_IDS),
-        host_mock=lambda wildcards: CACHE_DIR / "hosts" / wildcards.host_id / "mock" / "structures" / f"{wildcards.host_id}.pdb",
+        mocks=expand(rules.mock_phage_structure.output.phage_pdb, phage_id=PHAGE_IDS),
+        host_mock=rules.mock_host_structure.output.host_pdb,
         sourmash=lambda wildcards: [
             SOURMASH_CACHE / wildcards.host_id / f"{pid}.json" for pid in PHAGE_IDS
         ] if ENABLE_SOURMASH else []
