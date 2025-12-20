@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.DS_Store
 
 # C extensions
 *.so
@@ -164,6 +165,22 @@ cython_debug/
 
 # Dta Stuff
 data/
+Data/
+!data/inputs/
+!data/inputs/**
+!data/library/
+!data/library/**
+
+# Pipelines outputs and logs
+results/
+cache/
+results/logs/
+results/tmp/
+pipeline.log
+
+# Colabfold / foldseek outputs
+colabfold_out/
+foldseek_out/
 
 # colabfold_cache
 colabfold_cache/
@@ -186,4 +203,3 @@ PHACTS/
 db/
 
 Miniconda3-latest-MacOSX-x86_64.sh
-
