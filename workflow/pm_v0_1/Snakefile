@@ -1,213 +1,303 @@
-import hashlib
-import json
-import pathlib
-import yaml
-import pandas as pd
-import datetime
-import subprocess
-import tempfile
+# workflow/pm_v0_1/Snakefile
+# v0.1 contract-first pipeline: similarity + structural summaries + safety flags
+from __future__ import annotations
 
-configfile: "config.yaml"
-
-PHAGE_MANIFEST = pathlib.Path(config["manifests"]["phages"])
-HOST_MANIFEST = pathlib.Path(config["manifests"]["hosts"])
-CACHE_DIR = pathlib.Path(config["directories"]["cache"])
-RESULTS_DIR = pathlib.Path(config["directories"]["results"])
-TEST_MODE = config["modules"].get("test_mode", False)
-ENABLE_SOURMASH = config["modules"].get("enable_sourmash", False) and not TEST_MODE
-SOURMASH_K = config.get("params", {}).get("sourmash_k", 21)
-SOURMASH_SCALED = config.get("params", {}).get("sourmash_scaled", 2000)
-SOURMASH_VERSION = config.get("versions", {}).get("sourmash")
-SOURMASH_CACHE = CACHE_DIR / "sourmash"
-
-phages_df = pd.read_csv(PHAGE_MANIFEST, sep="\t") if PHAGE_MANIFEST.exists() else pd.DataFrame(columns=["phage_id","fasta"])
-hosts_df = pd.read_csv(HOST_MANIFEST, sep="\t") if HOST_MANIFEST.exists() else pd.DataFrame(columns=["host_id","genome_fna","proteome_faa"])
-PHAGE_IDS = phages_df["phage_id"].tolist()
-HOST_IDS = hosts_df["host_id"].tolist()
+import csv
+from pathlib import Path
 
 
-def sha256_file(path: pathlib.Path):
-    if not path.exists():
-        return None
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
+
+# ---------- Helpers ----------
+def read_tsv(path: str):
+    with open(path, newline="") as f:
+        r = csv.DictReader(f, delimiter="\t")
+        return [row for row in r]
+
+def list_phage_ids(manifest_path: str):
+    return [r["phage_id"] for r in read_tsv(manifest_path)]
+
+def list_host_ids(manifest_path: str):
+    return [r["host_id"] for r in read_tsv(manifest_path)]
+
+PHAGE_MANIFEST = "manifests/phages.tsv"
+HOST_MANIFEST = "manifests/hosts.tsv"
+
+PHAGE_IDS = list_phage_ids(PHAGE_MANIFEST)
+HOST_IDS = list_host_ids(HOST_MANIFEST)
+
+CACHE_DIR = Path(config["directories"]["cache"])
+RANKINGS_DIR = Path(config["directories"]["rankings"])
+
+# Feature artefact locations
+SIM_DIR = CACHE_DIR / "features" / "similarity"
+STRUCT_DIR = CACHE_DIR / "features" / "structural"
+SAFETY_DIR = CACHE_DIR / "features" / "safety"
+
+# Foldseek DB cache (accelerated)
+FOLDSEEK_DIR = CACHE_DIR / "foldseek"
+PHAGE_STRUCT_DIR = Path(config.get("structures", {}).get("phage_library_dir", str(CACHE_DIR / "structures" / "phages")))
+HOST_STRUCT_DIR = Path(config.get("structures", {}).get("hosts_dir", str(CACHE_DIR / "structures" / "hosts")))
+
+# Module toggles
+TEST_MODE = bool(config.get("modules", {}).get("test_mode", False))
+ENABLE_SIM = bool(config.get("modules", {}).get("enable_sourmash", False))
+ENABLE_STRUCT = bool(config.get("modules", {}).get("enable_structural_ppi", False))
+ENABLE_SAFETY = bool(config.get("modules", {}).get("enable_safety", False))
+
+# Conda env choices (avoid heavy tool installs in test mode)
+CORE_ENV = "envs/core.yml"
+SOURMASH_ENV = CORE_ENV if TEST_MODE else "envs/sourmash.yml"
+FOLDSEEK_ENV = CORE_ENV if TEST_MODE else "envs/foldseek.yml"
+PROKKA_ENV = CORE_ENV if TEST_MODE else "envs/prokka.yml"
+ABRICATE_ENV = CORE_ENV if TEST_MODE else "envs/abricate.yml"
 
 
-def iso_now():
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+# ---------- Output targets ----------
+def ranking_csv(host_id: str) -> str:
+    return str(RANKINGS_DIR / host_id / "ranking.csv")
+
+def evidence_json(host_id: str) -> str:
+    return str(RANKINGS_DIR / host_id / "evidence_bundle.json")
+
+def similarity_json(host_id: str, phage_id: str) -> str:
+    return str(SIM_DIR / host_id / f"{phage_id}.json")
+
+def structural_json(host_id: str, phage_id: str) -> str:
+    return str(STRUCT_DIR / host_id / f"{phage_id}.json")
+
+def safety_json(phage_id: str) -> str:
+    return str(SAFETY_DIR / f"{phage_id}.json")
+
+def structural_outputs(wc):
+    return [structural_json(wc.host_id, pid) for pid in PHAGE_IDS]
+
+def similarity_outputs(wc):
+    return [similarity_json(wc.host_id, pid) for pid in PHAGE_IDS]
+
+def safety_outputs():
+    return [safety_json(pid) for pid in PHAGE_IDS]
+
 
 rule all:
     input:
-        expand(RESULTS_DIR / "{host_id}" / "ranking.csv", host_id=HOST_IDS),
-        expand(RESULTS_DIR / "{host_id}" / "evidence_bundle.json", host_id=HOST_IDS)
+        expand(ranking_csv, host_id=HOST_IDS),
+        expand(evidence_json, host_id=HOST_IDS),
+        expand(str(RANKINGS_DIR / "{host_id}" / "VALIDATED.txt"), host_id=HOST_IDS)
 
-rule mock_phage_structure:
-    input:
-        phage_fasta=lambda wildcards: phages_df.set_index("phage_id").loc[wildcards.phage_id, "fasta"] if not phages_df.empty else "missing"
-    output:
-        phage_pdb=CACHE_DIR / "phages" / "{phage_id}" / "mock" / "structures" / "{phage_id}.pdb"
-    run:
-        pathlib.Path(output.phage_pdb).parent.mkdir(parents=True, exist_ok=True)
-        pathlib.Path(output.phage_pdb).write_text(f"MOCK {pathlib.Path(output.phage_pdb).stem}\n")
 
-rule mock_host_structure:
-    input:
-        host_fasta=lambda wildcards: hosts_df.set_index("host_id").loc[wildcards.host_id, "genome_fna"] if not hosts_df.empty else "missing"
-    output:
-        host_pdb=CACHE_DIR / "hosts" / "{host_id}" / "mock" / "structures" / "{host_id}.pdb"
-    run:
-        pathlib.Path(output.host_pdb).parent.mkdir(parents=True, exist_ok=True)
-        pathlib.Path(output.host_pdb).write_text(f"MOCK {pathlib.Path(output.host_pdb).stem}\n")
-
+# ---------- Similarity module (sourmash) ----------
+# Cache sketches (real mode). In test mode we bypass tools and directly emit mock feature JSON.
 rule sourmash_sketch_phage:
     input:
-        fasta=lambda wildcards: phages_df.set_index("phage_id").loc[wildcards.phage_id, "fasta"]
+        lambda wc: next(r["fasta"] for r in read_tsv(PHAGE_MANIFEST) if r["phage_id"] == wc.phage_id)
     output:
-        sig=SOURMASH_CACHE / "phages" / "{phage_id}.sig"
-    conda: "envs/sourmash.yml"
+        str(CACHE_DIR / "sourmash" / "phages" / "{phage_id}.sig")
+    conda:
+        SOURMASH_ENV
+    threads: 1
     shell:
         r"""
-        mkdir -p $(dirname {output.sig})
-        sourmash sketch dna -p k={SOURMASH_K},scaled={SOURMASH_SCALED} {input.fasta} -o {output.sig}
+        mkdir -p {CACHE_DIR}/sourmash/phages
+        sourmash sketch dna -k {config[params][sourmash_k]} --scaled {config[params][sourmash_scaled]} -o {output} {input}
         """
 
 rule sourmash_sketch_host:
     input:
-        fasta=lambda wildcards: hosts_df.set_index("host_id").loc[wildcards.host_id, "genome_fna"]
+        lambda wc: next(r["genome_fna"] for r in read_tsv(HOST_MANIFEST) if r["host_id"] == wc.host_id)
     output:
-        sig=SOURMASH_CACHE / "hosts" / "{host_id}.sig"
-    conda: "envs/sourmash.yml"
+        str(CACHE_DIR / "sourmash" / "hosts" / "{host_id}.sig")
+    conda:
+        SOURMASH_ENV
+    threads: 1
     shell:
         r"""
-        mkdir -p $(dirname {output.sig})
-        sourmash sketch dna -p k={SOURMASH_K},scaled={SOURMASH_SCALED} {input.fasta} -o {output.sig}
+        mkdir -p {CACHE_DIR}/sourmash/hosts
+        sourmash sketch dna -k {config[params][sourmash_k]} --scaled {config[params][sourmash_scaled]} -o {output} {input}
         """
 
-rule sourmash_compare:
+rule similarity_feature:
     input:
-        phage_sig=rules.sourmash_sketch_phage.output.sig,
-        host_sig=rules.sourmash_sketch_host.output.sig
+        lambda wc: {} if TEST_MODE else {"host_sig": str(CACHE_DIR / "sourmash" / "hosts" / f"{wc.host_id}.sig"),
+                                         "phage_sig": str(CACHE_DIR / "sourmash" / "phages" / f"{wc.phage_id}.sig")}
     output:
-        json=SOURMASH_CACHE / "{host_id}" / "{phage_id}.json"
-    conda: "envs/sourmash.yml"
-    run:
-        out_path = pathlib.Path(output.json)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        # Compute containment (phage vs host) via sourmash compare matrix
-        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".csv") as tmp:
-            tmp_path = tmp.name
-        cmd = [
-            "sourmash",
-            "compare",
-            "--containment",
-            "--csv",
-            tmp_path,
-            input.phage_sig,
-            input.host_sig,
-        ]
-        subprocess.run(cmd, check=True)
-        df = pd.read_csv(tmp_path, index_col=0)
-        value = float(df.iloc[0, 1]) if not df.empty else 0.0
-        payload = {
-            "host_id": wildcards.host_id,
-            "phage_id": wildcards.phage_id,
-            "similarity": value,
-            "metric": "containment",
-            "tool": "sourmash",
-            "tool_version": SOURMASH_VERSION,
-            "source": "real",
-        }
-        out_path.write_text(json.dumps(payload))
+        lambda wc: similarity_json(wc.host_id, wc.phage_id)
+    conda:
+        SOURMASH_ENV
+    threads: 1
+    params:
+        cmd=lambda wc, input, output: (
+            f"python scripts/modules/sourmash_containment.py --host-id {wc.host_id} --phage-id {wc.phage_id} "
+            f"--out {output} "
+            + ("--mock" if TEST_MODE else f"--host-sig {input['host_sig']} --phage-sig {input['phage_sig']}")
+        )
+    shell:
+        "{params.cmd}"
 
-rule aggregate_rankings:
+
+# ---------- Safety module (abricate + lysogeny flags) ----------
+rule prokka_annotate_phage:
     input:
-        mocks=expand(rules.mock_phage_structure.output.phage_pdb, phage_id=PHAGE_IDS),
-        host_mock=rules.mock_host_structure.output.host_pdb,
-        sourmash=lambda wildcards: [
-            SOURMASH_CACHE / wildcards.host_id / f"{pid}.json" for pid in PHAGE_IDS
-        ] if ENABLE_SOURMASH else []
+        lambda wc: next(r["fasta"] for r in read_tsv(PHAGE_MANIFEST) if r["phage_id"] == wc.phage_id)
     output:
-        ranking=RESULTS_DIR / "{host_id}" / "ranking.csv",
-        evidence=RESULTS_DIR / "{host_id}" / "evidence_bundle.json"
-    run:
-        out_dir = pathlib.Path(output.ranking).parent
-        out_dir.mkdir(parents=True, exist_ok=True)
-        rows = []
-        sourmash_scores = {}
-        if ENABLE_SOURMASH:
-            for pid in PHAGE_IDS:
-                feature_path = SOURMASH_CACHE / wildcards.host_id / f"{pid}.json"
-                try:
-                    feature = json.loads(feature_path.read_text())
-                    score = float(feature.get("similarity", 0.0))
-                except Exception:
-                    score = 0.0
-                sourmash_scores[pid] = score
+        gff=str(CACHE_DIR / "annotations" / "phages" / "{phage_id}" / "{phage_id}.gff")
+    conda:
+        PROKKA_ENV
+    threads: 2
+    shell:
+        r"""
+        outdir={CACHE_DIR}/annotations/phages/{wildcards.phage_id}
+        mkdir -p $outdir
+        prokka --outdir $outdir --prefix {wildcards.phage_id} --kingdom Viruses --cpus {threads} {input}
+        # prokka writes <prefix>.gff in outdir
+        """
 
-            sorted_phages = sorted(PHAGE_IDS, key=lambda pid: sourmash_scores.get(pid, 0.0), reverse=True)
-            for idx, pid in enumerate(sorted_phages):
-                rows.append({
-                    "host_id": wildcards.host_id,
-                    "phage_id": pid,
-                    "rank": idx + 1,
-                    "confidence_score": sourmash_scores.get(pid, 0.0),
-                    "primary_reason": "sourmash_similarity",
-                    "safety_flags": "",
-                })
-        else:
-            rows = [
-                {
-                    "host_id": wildcards.host_id,
-                    "phage_id": pid,
-                    "rank": idx + 1,
-                    "confidence_score": 1.0,
-                    "primary_reason": "mock",
-                    "safety_flags": "",
-                }
-                for idx, pid in enumerate(PHAGE_IDS)
-            ]
+rule abricate_vfdb_phage:
+    input:
+        lambda wc: next(r["fasta"] for r in read_tsv(PHAGE_MANIFEST) if r["phage_id"] == wc.phage_id)
+    output:
+        str(CACHE_DIR / "safety" / "abricate" / "{phage_id}.tsv")
+    conda:
+        ABRICATE_ENV
+    threads: 1
+    shell:
+        r"""
+        mkdir -p {CACHE_DIR}/safety/abricate
+        # Requires user to have abricate databases set up (abricate --setupdb).
+        abricate --db vfdb {input} > {output} || true
+        """
 
-        if not rows:
-            rows = [{
-                "host_id": wildcards.host_id,
-                "phage_id": "none",
-                "rank": 1,
-                "confidence_score": 0.0,
-                "primary_reason": "mock",
-                "safety_flags": "",
-            }]
-        ranking_df = pd.DataFrame(rows)
-        ranking_df.to_csv(output.ranking, index=False)
-
-        # Evidence bundle with reproducibility metadata
-        evidence = {
-            "pipeline_version": "0.1.0",
-            "mock": bool(TEST_MODE),
-            "run_id": iso_now(),
-            "test_mode": bool(TEST_MODE),
-            "config_hash": sha256_file(pathlib.Path("config.yaml")),
-            "manifest_hashes": {
-                "phages": sha256_file(PHAGE_MANIFEST),
-                "hosts": sha256_file(HOST_MANIFEST),
-            },
-            "snapshots": {
-                "modules": config.get("modules", {}),
-                "params": config.get("params", {}),
-                "versions": config.get("versions", {}),
-            },
-            "features": {
-                "sourmash": {
-                    "status": "ok" if ENABLE_SOURMASH else "skipped",
-                    "source": "real" if ENABLE_SOURMASH else "mock",
-                    "metric": "containment",
-                    "tool": "sourmash",
-                    "tool_version": SOURMASH_VERSION,
-                    "reason": None if ENABLE_SOURMASH else "module_disabled_or_test_mode",
-                }
-            }
+rule safety_feature:
+    input:
+        lambda wc: {} if TEST_MODE else {
+            "abricate": str(CACHE_DIR / "safety" / "abricate" / f"{wc.phage_id}.tsv"),
+            "gff": str(CACHE_DIR / "annotations" / "phages" / f"{wc.phage_id}" / f"{wc.phage_id}.gff"),
         }
-        with pathlib.Path(output.evidence).open("w") as f:
-            json.dump(evidence, f)
+    output:
+        lambda wc: safety_json(wc.phage_id)
+    conda:
+        CORE_ENV
+    threads: 1
+    params:
+        cmd=lambda wc, input, output: (
+            f"python scripts/modules/safety_compile.py --phage-id {wc.phage_id} --out {output} "
+            + ("--mock" if TEST_MODE else f"--abricate-tsv {input['abricate']} --gff {input['gff']}")
+        )
+    shell:
+        "{params.cmd}"
+
+
+# ---------- Structural module (Foldseek summaries) ----------
+rule foldseek_createdb_phage:
+    input:
+        # Expect structures already present (outside scope of v0.1), one folder per phage_id under PHAGE_STRUCT_DIR.
+        expand(str(PHAGE_STRUCT_DIR / "{phage_id}"), phage_id=PHAGE_IDS)
+    output:
+        str(FOLDSEEK_DIR / "db" / "phageDB.dbtype")
+    conda:
+        FOLDSEEK_ENV
+    threads: 2
+    shell:
+        r"""
+        mkdir -p {FOLDSEEK_DIR}/db
+        # createdb accepts a folder of structures. Users should populate {PHAGE_STRUCT_DIR} beforehand.
+        foldseek createdb {PHAGE_STRUCT_DIR} {FOLDSEEK_DIR}/db/phageDB
+        touch {output}
+        """
+
+rule foldseek_createdb_host:
+    input:
+        lambda wc: str(HOST_STRUCT_DIR / wc.host_id)
+    output:
+        str(FOLDSEEK_DIR / "db" / "hosts" / "{host_id}" / "hostDB.dbtype")
+    conda:
+        FOLDSEEK_ENV
+    threads: 2
+    shell:
+        r"""
+        mkdir -p {FOLDSEEK_DIR}/db/hosts/{wildcards.host_id}
+        foldseek createdb {input} {FOLDSEEK_DIR}/db/hosts/{wildcards.host_id}/hostDB
+        touch {output}
+        """
+
+rule foldseek_search_host_vs_phage:
+    input:
+        phagedb=str(FOLDSEEK_DIR / "db" / "phageDB.dbtype"),
+        hostdb=str(FOLDSEEK_DIR / "db" / "hosts" / "{host_id}" / "hostDB.dbtype")
+    output:
+        str(FOLDSEEK_DIR / "results" / "{host_id}" / "hits.tsv")
+    conda:
+        FOLDSEEK_ENV
+    threads: 4
+    shell:
+        r"""
+        mkdir -p {FOLDSEEK_DIR}/results/{wildcards.host_id}
+        mkdir -p {FOLDSEEK_DIR}/tmp/{wildcards.host_id}
+        # result DB prefix
+        foldseek search {FOLDSEEK_DIR}/db/hosts/{wildcards.host_id}/hostDB {FOLDSEEK_DIR}/db/phageDB {FOLDSEEK_DIR}/results/{wildcards.host_id}/alnDB {FOLDSEEK_DIR}/tmp/{wildcards.host_id} --threads {threads} || true
+        foldseek convertalis {FOLDSEEK_DIR}/db/hosts/{wildcards.host_id}/hostDB {FOLDSEEK_DIR}/db/phageDB {FOLDSEEK_DIR}/results/{wildcards.host_id}/alnDB {output} --format-mode 4 --format-output query,target,evalue,bits,qcov,tcov || true
+        # Ensure an output file exists even if Foldseek fails (bundle marks evidence as empty)
+        touch {output}
+        """
+
+rule structural_features:
+    input:
+        lambda wc: {} if TEST_MODE else {"hits": str(FOLDSEEK_DIR / "results" / wc.host_id / "hits.tsv")}
+    output:
+        structural_outputs
+    conda:
+        CORE_ENV
+    threads: 1
+    params:
+        phage_ids=",".join(PHAGE_IDS),
+        out_dir=lambda wc: str(STRUCT_DIR / wc.host_id),
+        cmd=lambda wc, input, output, params: (
+            f"python scripts/modules/foldseek_summarise.py --host-id {wc.host_id} --phage-ids {params.phage_ids} "
+            f"--out-dir {params.out_dir} "
+            + ("--mock" if TEST_MODE else f"--hits-tsv {input['hits']}")
+        )
+    shell:
+        "{params.cmd}"
+
+
+# ---------- Decision bundle assembly ----------
+rule decision_bundle:
+    input:
+        similarity = similarity_outputs if ENABLE_SIM else [],
+        structural = structural_outputs if ENABLE_STRUCT else [],
+        safety = safety_outputs() if ENABLE_SAFETY else []
+    output:
+        ranking=lambda wc: ranking_csv(wc.host_id),
+        evidence=lambda wc: evidence_json(wc.host_id)
+    conda:
+        CORE_ENV
+    threads: 1
+    shell:
+        r"""
+        python scripts/assemble_decision_bundle.py \
+          --host-id {wildcards.host_id} \
+          --config config.yaml \
+          --phage-manifest {PHAGE_MANIFEST} \
+          --host-manifest {HOST_MANIFEST} \
+          --similarity-dir {SIM_DIR} \
+          --structural-dir {STRUCT_DIR} \
+          --safety-dir {SAFETY_DIR} \
+          --out-ranking {output.ranking} \
+          --out-evidence {output.evidence}
+        """
+
+# Validate outputs (optional but useful for CI/demo)
+rule validate_decision_bundle:
+    input:
+        ranking=lambda wc: ranking_csv(wc.host_id),
+        evidence=lambda wc: evidence_json(wc.host_id),
+        schema="contracts/decision_bundle/evidence_bundle.schema.json"
+    output:
+        touch(str(RANKINGS_DIR / "{host_id}" / "VALIDATED.txt"))
+    conda:
+        CORE_ENV
+    threads: 1
+    shell:
+        r"""
+        python scripts/validate_decision_bundle.py --ranking {input.ranking} --evidence {input.evidence} --schema {input.schema}
+        touch {output}
+        """

@@ -55,6 +55,7 @@ logs/
 tmp/
 results/logs/
 results/tmp/
+rankings/
 colabfold_out/
 foldseek_out/
 colabfold_cache/

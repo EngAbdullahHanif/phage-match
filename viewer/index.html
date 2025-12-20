@@ -58,7 +58,12 @@
         headers.forEach((h, i) => row[h] = cols[i] ?? '');
         row.rank = parseInt(row.rank || 0, 10) || 0;
         row.confidence_score = parseFloat(row.confidence_score || 0) || 0;
-        row.safety_flags = (row.safety_flags || '').split(/[;|]/).filter(Boolean);
+        const rawFlags = (row.safety_flags || '').trim();
+        if (!rawFlags || rawFlags.toLowerCase() === 'none') {
+          row.safety_flags = [];
+        } else {
+          row.safety_flags = rawFlags.split(/[,;|]/).map(f => f.trim()).filter(f => f && f.toLowerCase() !== 'none');
+        }
         return row;
       });
     }
@@ -205,7 +210,7 @@
       const metaEl = document.getElementById('runMeta');
       const profile = evidence?.profile || (evidence?.test_mode ? 'test' : 'portable');
       const ver = evidence?.pipeline_version || 'v0.1';
-      metaEl.textContent = `Host ${evidence?.host_id || fallbackHost || 'H001'} • Run ${evidence?.run_id || 'n/a'} • Profile ${profile} • Version ${ver} • Source: ${source.label}`;
+      metaEl.textContent = `Host ${evidence?.host_id || fallbackHost || 'H001'} | Run ${evidence?.run_id || 'n/a'} | Profile ${profile} | Version ${ver} | Source: ${source.label}`;
     }
 
     function combineData(ranking, evidence) {
@@ -231,7 +236,7 @@
       const preferred = params.get('preferred') || 'results';
 
       const sources = [
-        { id: 'results', label: `Latest run (results/runs/${hostId})`, path: `../results/runs/${hostId}` },
+        { id: 'results', label: `Latest run (rankings/${hostId})`, path: `../rankings/${hostId}` },
         { id: 'demo', label: `Demo pack (demo_outputs/${hostId})`, path: `../demo_outputs/${hostId}` },
       ];
       const sourceSelect = document.getElementById('sourceSelect');

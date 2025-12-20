@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "PhageMatch"
+version: "0.1.0"
+type: software
+authors:
+  - family-names: "Unknown"
+    given-names: "Team"
+repository-code: "https://example.com/REPLACE"
+license: "MIT"
+keywords:
+  - phage
+  - bioinformatics
+  - workflow
+  - snakemake
+  - foldseek
+  - sourmash
+abstract: "Decision-support pipeline stub that emits a ranking.csv + evidence_bundle.json (Decision Bundle contract) for phage shortlist triage."

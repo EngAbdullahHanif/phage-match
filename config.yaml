@@ -6,9 +6,9 @@ manifests:
 
 directories:
   cache: "cache"
-  results: "results/runs"
   logs: "results/logs"
   tmp: "results/tmp"
+  rankings: "rankings"
 
 modules:
   enable_structural_ppi: true
@@ -36,3 +36,9 @@ versions:
   uniclust_db: "uniclust30_2020_06"
   foldseek: "9.427df8a"
   sourmash: "4.x"
+
+profile: "test"
+
+structures:
+  phage_library_dir: "cache/structures/phages"
+  hosts_dir: "cache/structures/hosts"

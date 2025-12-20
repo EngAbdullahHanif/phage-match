@@ -7,3 +7,4 @@ dependencies:
   - snakemake-minimal=8.*
   - pandas
   - pyyaml
+  - jsonschema

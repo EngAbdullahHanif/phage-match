@@ -6,7 +6,7 @@ param(
 )
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$resultsPath = Join-Path $root "results\runs\$HostId"
+$resultsPath = Join-Path $root "rankings\$HostId"
 $viewerPath = Join-Path $root "viewer\index.html"
 $preferred = "results"
 

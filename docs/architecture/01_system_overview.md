@@ -1,34 +1,27 @@
 # System overview
 
 ```text
-                   ┌──────────────────────────────┐
-                   │        PhageMatch v0.1        │
-                   │  (architecture / mock stub)   │
-                   └──────────────┬───────────────┘
-                                  │
-                     manifests + config (contracts)
-                                  │
-                                  ▼
-                   ┌──────────────────────────────┐
-                   │ Snakemake Orchestrator (DAG)  │
-                   │  - profiles: test/portable/acc│
-                   │  - cache-first layout         │
-                   └───────┬─────────┬────────────┘
-                           │         │
-                           │         │
-                 similarity│   safety│    structural PPI
-                   (mock→) │   (mock→)│     (mock→)
-                   sourmash│  abricate│  foldseek (+cached folding)
-                           │         │
-                           └─────┬───┘
-                                 ▼
-                   ┌──────────────────────────────┐
-                   │   Decision Bundle Outputs     │
-                   │  ranking.csv + evidence.json  │
-                   │  + optional test_plan.md      │
-                   └──────────────────────────────┘
+[manifests + config]
+        |
+        v
+[Snakemake orchestrator]
+  - profiles: test / portable / accelerated
+  - cache-first layout
+        |
+        v
+[feature modules]
+  - similarity (sourmash)
+  - safety (abricate + lysogeny flags)
+  - structural (foldseek summaries)
+        |
+        v
+[Decision Bundle outputs]
+  - rankings/<host_id>/ranking.csv
+  - rankings/<host_id>/evidence_bundle.json
+  - optional test_plan.md
 ```
-Key idea: **contracts first, modules swappable**. The pipeline always produces the same output artifacts
+
+Key idea: contracts first, modules swappable. The pipeline always produces the same output artifacts
 (`ranking.csv`, `evidence_bundle.json`), while feature modules can be mocked or replaced by real implementations
 without changing the contract.
 

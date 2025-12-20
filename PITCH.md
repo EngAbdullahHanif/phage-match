@@ -1,4 +1,4 @@
-# PhageMatch — Decision support for phage selection
+# PhageMatch - Decision support for phage selection
 
 ## Problem
 Phage therapy requires matching the right phages to a specific bacterial isolate. Today this often means broad empirical screening across phage libraries, which is slow, labour-heavy, and hard to standardise.
@@ -19,12 +19,12 @@ PhageMatch is a decision-support workflow that returns:
 - feedback loop: wet-lab outcomes improve future rankings (data moat)
 
 ## What this repo is
-A **clean architecture stub** that demonstrates the pipeline contracts and the “decision bundle” output. Feature modules are currently mocked but designed to be swapped in without changing outputs.
+A clean architecture stub that demonstrates the pipeline contracts and the Decision Bundle output. Feature modules can be mocked (demo) or run for real (portable/accelerated profiles) without changing outputs.
 
 ## Pilot ask (what we need from a partner lab)
 - isolate genome/proteome (or sequencing output)
 - access to a phage library catalogue (genomes)
-- (optional) historical host-range results for evaluation
+- optional historical host-range results for evaluation
 
 ## What the partner gets
 - ranked shortlist + evidence bundle for each isolate

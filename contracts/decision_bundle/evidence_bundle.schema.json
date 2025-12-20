@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhageMatch Decision Bundle (evidence_bundle.json)",
+  "type": "object",
+  "required": [
+    "pipeline_version",
+    "run_id",
+    "profile",
+    "test_mode",
+    "config_sha256",
+    "manifest_hashes",
+    "modules",
+    "params",
+    "versions",
+    "shortlist"
+  ],
+  "properties": {
+    "pipeline_version": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "host_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "profile": {
+      "type": "string"
+    },
+    "test_mode": {
+      "type": "boolean"
+    },
+    "config_sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "manifest_hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "params": {
+      "type": "object"
+    },
+    "versions": {
+      "type": "object"
+    },
+    "modules": {
+      "type": "object",
+      "required": [
+        "similarity",
+        "safety",
+        "structural"
+      ],
+      "properties": {
+        "similarity": {
+          "$ref": "#/$defs/moduleStatus"
+        },
+        "safety": {
+          "$ref": "#/$defs/moduleStatus"
+        },
+        "structural": {
+          "$ref": "#/$defs/moduleStatus"
+        }
+      },
+      "additionalProperties": true
+    },
+    "shortlist": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/shortlistItem"
+      }
+    }
+  },
+  "$defs": {
+    "moduleStatus": {
+      "type": "object",
+      "required": [
+        "status",
+        "tool"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "mocked",
+            "skipped",
+            "unavailable",
+            "error",
+            "unknown"
+          ]
+        },
+        "tool": {
+          "type": "string"
+        },
+        "tool_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "shortlistItem": {
+      "type": "object",
+      "required": [
+        "host_id",
+        "phage_id",
+        "rank",
+        "confidence_score",
+        "primary_reason",
+        "safety_flags",
+        "evidence",
+        "next_best_action"
+      ],
+      "properties": {
+        "host_id": {
+          "type": "string"
+        },
+        "phage_id": {
+          "type": "string"
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "confidence_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "primary_reason": {
+          "type": "string"
+        },
+        "safety_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "properties": {
+            "similarity": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "structural": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "safety": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "next_best_action": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
