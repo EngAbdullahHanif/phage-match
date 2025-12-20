@@ -20,6 +20,10 @@ Inspect without running:
 - `demo_outputs/H001/evidence_bundle.json`
 - `demo_outputs/H001/test_plan.md`
 
+Browser viewer (zero build):
+- Run: `powershell -ExecutionPolicy Bypass -File .\run_demo.ps1`
+- This runs the pipeline (unless `-DemoOnly`), starts a tiny local server, and opens `viewer/index.html` to display the decision bundle (defaults to demo pack; falls back automatically if results are missing). Fallback to `file://` is used only if the server cannot start.
+
 Small real-data dry-run (sequence-only):
 1) Add your phage FASTAs to `manifests/phages.tsv` and host FASTA/FAA to `manifests/hosts.tsv`.
 2) Set in `config.yaml`: `modules.test_mode: false`, `modules.enable_sourmash: true`, `modules.enable_safety: false` (until plugged in), `modules.enable_structural_ppi: false`.

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhageMatch Decision Bundle</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.15/dist/tailwind.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div class="max-w-6xl mx-auto px-6 py-8">
+    <header class="mb-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-xs uppercase tracking-wide text-slate-500">PhageMatch</p>
+          <h1 class="text-2xl font-semibold text-slate-900">Decision Bundle Viewer</h1>
+          <p id="runMeta" class="text-sm text-slate-600 mt-1">Loading...</p>
+        </div>
+        <div class="flex gap-3 items-center">
+          <select id="sourceSelect" class="border border-slate-200 rounded-md px-3 py-2 text-sm bg-white"></select>
+          <button id="refreshBtn" class="inline-flex items-center gap-2 bg-slate-900 text-white px-3 py-2 text-sm rounded-md hover:bg-slate-800">
+            <span class="icon" data-lucide="rotate-ccw"></span><span>Reload</span>
+          </button>
+        </div>
+      </div>
+      <div id="moduleBadges" class="flex flex-wrap gap-2 mt-3"></div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+      <section class="lg:col-span-2 space-y-3">
+        <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Shortlist</h2>
+        <div id="shortlist" class="space-y-3"></div>
+      </section>
+
+      <section class="lg:col-span-3 space-y-4">
+        <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Evidence</h2>
+        <div id="detail" class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 min-h-[320px]">
+          <p class="text-sm text-slate-500">Select a phage to view evidence.</p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="mt-8 text-xs text-slate-600">
+      <div id="footerMeta" class="space-y-1"></div>
+      <p class="text-[11px] text-slate-500 mt-2">This viewer is static and reads from committed outputs (demo or latest run). No data is sent anywhere.</p>
+    </footer>
+  </div>
+
+  <script>
+    // Lightweight CSV parsing without dependencies
+    function parseCsv(text) {
+      const lines = text.trim().split(/\r?\n/).filter(Boolean);
+      if (!lines.length) return [];
+      const headers = lines.shift().split(',').map(h => h.trim());
+      return lines.map(line => {
+        const cols = line.split(',').map(c => c.trim());
+        const row = {};
+        headers.forEach((h, i) => row[h] = cols[i] ?? '');
+        row.rank = parseInt(row.rank || 0, 10) || 0;
+        row.confidence_score = parseFloat(row.confidence_score || 0) || 0;
+        row.safety_flags = (row.safety_flags || '').split(/[;|]/).filter(Boolean);
+        return row;
+      });
+    }
+
+    function badge(text, tone = 'slate') {
+      const tones = {
+        slate: 'bg-slate-100 text-slate-800 border-slate-200',
+        green: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+        amber: 'bg-amber-100 text-amber-800 border-amber-200',
+        red: 'bg-rose-100 text-rose-800 border-rose-200',
+        blue: 'bg-sky-100 text-sky-800 border-sky-200',
+      };
+      return `<span class="inline-flex items-center px-2 py-1 rounded border text-xs font-medium ${tones[tone] || tones.slate}">${text}</span>`;
+    }
+
+    function confidenceLabel(score) {
+      if (score >= 0.75) return 'High';
+      if (score >= 0.4) return 'Medium';
+      return 'Low';
+    }
+
+    function confidenceTone(score) {
+      if (score >= 0.75) return 'green';
+      if (score >= 0.4) return 'amber';
+      return 'red';
+    }
+
+    async function fetchText(path) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`Failed to load ${path}`);
+      return res.text();
+    }
+
+    async function loadSource(source) {
+      const rankingText = await fetchText(`${source.path}/ranking.csv`);
+      const evidenceText = await fetchText(`${source.path}/evidence_bundle.json`);
+      return { ranking: parseCsv(rankingText), evidence: JSON.parse(evidenceText) };
+    }
+
+    function renderModules(modules = {}) {
+      const container = document.getElementById('moduleBadges');
+      container.innerHTML = '';
+      Object.entries(modules).forEach(([name, meta]) => {
+        const status = (meta.status || 'unknown').toLowerCase();
+        const tone = status === 'ok' ? 'green' : status === 'mocked' ? 'amber' : status === 'skipped' ? 'slate' : 'red';
+        const label = `${name}: ${status}`;
+        const tool = meta.tool_version ? ` (${meta.tool}${meta.tool_version ? ' ' + meta.tool_version : ''})` : (meta.tool ? ` (${meta.tool})` : '');
+        const span = document.createElement('span');
+        span.className = 'inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded border ' +
+          (tone === 'green' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+           tone === 'amber' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+           tone === 'red' ? 'bg-rose-50 text-rose-800 border-rose-200' :
+           'bg-slate-100 text-slate-800 border-slate-200');
+        span.innerHTML = `${label}${tool}`;
+        container.appendChild(span);
+      });
+    }
+
+    function renderShortlist(data, onSelect) {
+      const list = document.getElementById('shortlist');
+      list.innerHTML = '';
+      data.shortlist.forEach(item => {
+        const tone = confidenceTone(item.confidence_score);
+        const safetyBadges = (item.safety_flags && item.safety_flags.length)
+          ? item.safety_flags.map(f => badge(f, 'amber')).join(' ')
+          : badge('none', 'green');
+        const card = document.createElement('button');
+        card.className = 'w-full text-left bg-white border border-slate-200 rounded-lg shadow-sm p-4 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300';
+        card.innerHTML = `
+          <div class="flex justify-between items-start">
+            <div>
+              <p class="text-xs uppercase tracking-wide text-slate-500">Rank ${item.rank}</p>
+              <p class="text-lg font-semibold text-slate-900">${item.phage_id}</p>
+              <p class="text-sm text-slate-600">${item.primary_reason || 'mocked'}</p>
+            </div>
+            <div class="flex flex-col items-end gap-2">
+              ${badge(confidenceLabel(item.confidence_score), tone)}
+              <div class="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-2 rounded-full ${tone === 'green' ? 'bg-emerald-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-rose-500'}" style="width:${Math.min(100, Math.max(0, item.confidence_score * 100))}%;"></div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-3 flex flex-wrap gap-2">${safetyBadges}</div>
+        `;
+        card.addEventListener('click', () => onSelect(item));
+        list.appendChild(card);
+      });
+    }
+
+    function renderDetail(item, evidence, meta) {
+      if (!item) {
+        document.getElementById('detail').innerHTML = '<p class="text-sm text-slate-500">Select a phage to view evidence.</p>';
+        return;
+      }
+      const ev = item.evidence || {};
+      const section = (title, body) => `
+        <div>
+          <p class="text-xs uppercase tracking-wide text-slate-500 mb-1">${title}</p>
+          <p class="text-sm text-slate-800 whitespace-pre-line">${body}</p>
+        </div>`;
+
+      const similarity = ev.similarity ? JSON.stringify(ev.similarity, null, 2) : 'Not available / mocked';
+      const structural = ev.structural ? JSON.stringify(ev.structural, null, 2) : 'Not available / mocked';
+      const safety = ev.safety ? JSON.stringify(ev.safety, null, 2) : (item.safety_flags && item.safety_flags.length ? item.safety_flags.join(', ') : 'Not available / mocked');
+
+      const nextAction = item.next_best_action || 'Not provided';
+      const prov = meta ? `Tool versions: ${JSON.stringify(meta.versions || {}, null, 2)}` : '';
+
+      document.getElementById('detail').innerHTML = `
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-slate-500">Phage</p>
+            <p class="text-lg font-semibold text-slate-900">${item.phage_id}</p>
+          </div>
+          <div class="flex gap-2 items-center">
+            ${badge(`Rank ${item.rank}`, 'blue')}
+            ${badge(confidenceLabel(item.confidence_score), confidenceTone(item.confidence_score))}
+          </div>
+        </div>
+        <div class="space-y-3 text-sm">
+          ${section('Similarity', similarity)}
+          ${section('Structural', structural)}
+          ${section('Safety', safety)}
+          ${section('Next best action', nextAction)}
+          ${prov ? section('Provenance', prov) : ''}
+        </div>
+      `;
+    }
+
+    function renderFooter(evidence) {
+      const footer = document.getElementById('footerMeta');
+      if (!evidence) {
+        footer.textContent = '';
+        return;
+      }
+      footer.innerHTML = `
+        <div>Config hash: ${evidence.config_hash || evidence.config_sha256 || 'n/a'}</div>
+        <div>Manifest hashes: ${evidence.manifest_hashes ? JSON.stringify(evidence.manifest_hashes) : 'n/a'}</div>
+        <div>Timestamp: ${evidence.run_id || 'n/a'}</div>
+      `;
+    }
+
+    function renderMeta(evidence, source, fallbackHost) {
+      const metaEl = document.getElementById('runMeta');
+      const profile = evidence?.profile || (evidence?.test_mode ? 'test' : 'portable');
+      const ver = evidence?.pipeline_version || 'v0.1';
+      metaEl.textContent = `Host ${evidence?.host_id || fallbackHost || 'H001'} • Run ${evidence?.run_id || 'n/a'} • Profile ${profile} • Version ${ver} • Source: ${source.label}`;
+    }
+
+    function combineData(ranking, evidence) {
+      const evMap = new Map();
+      (evidence.shortlist || []).forEach(item => evMap.set(item.phage_id, item));
+      const shortlist = ranking.map(row => {
+        const ev = evMap.get(row.phage_id) || {};
+        return {
+          ...row,
+          primary_reason: row.primary_reason || ev.primary_reason || 'mocked',
+          safety_flags: row.safety_flags && row.safety_flags.length ? row.safety_flags : (ev.safety_flags || []),
+          evidence: ev.evidence || {},
+          next_best_action: ev.next_best_action || 'Not provided'
+        };
+      });
+      return { shortlist };
+    }
+
+    async function init() {
+      lucide.createIcons();
+      const params = new URLSearchParams(window.location.search);
+      const hostId = params.get('host') || 'H001';
+      const preferred = params.get('preferred') || 'results';
+
+      const sources = [
+        { id: 'results', label: `Latest run (results/runs/${hostId})`, path: `../results/runs/${hostId}` },
+        { id: 'demo', label: `Demo pack (demo_outputs/${hostId})`, path: `../demo_outputs/${hostId}` },
+      ];
+      const sourceSelect = document.getElementById('sourceSelect');
+      sources.forEach(src => {
+        const opt = document.createElement('option');
+        opt.value = src.id;
+        opt.textContent = src.label;
+        sourceSelect.appendChild(opt);
+      });
+
+      async function loadPreferred() {
+        let current = sources.find(s => s.id === preferred) || sources[0];
+        try {
+          const data = await loadSource(current);
+          sourceSelect.value = current.id;
+          return { current, data };
+        } catch (err) {
+          // fallback to demo
+          const demo = sources.find(s => s.id === 'demo');
+          const data = await loadSource(demo);
+          sourceSelect.value = demo.id;
+          return { current: demo, data };
+        }
+      }
+
+      async function loadFromSelection() {
+        const selected = sources.find(s => s.id === sourceSelect.value) || sources[0];
+        const data = await loadSource(selected);
+        return { current: selected, data };
+      }
+
+      async function renderLoader(loadFn) {
+        const shortlistEl = document.getElementById('shortlist');
+        shortlistEl.innerHTML = '<p class="text-sm text-slate-500">Loading...</p>';
+        try {
+          const { current, data } = await loadFn();
+          const combined = combineData(data.ranking, data.evidence);
+          renderModules(data.evidence.modules || {});
+          renderMeta(data.evidence, current, data.ranking[0]?.host_id);
+          renderFooter(data.evidence);
+          let selectedItem = combined.shortlist[0];
+          renderShortlist(combined, (item) => {
+            selectedItem = item;
+            renderDetail(item, data.evidence, data);
+          });
+          renderDetail(selectedItem, data.evidence, data);
+        } catch (err) {
+          shortlistEl.innerHTML = `<p class="text-sm text-rose-600">Failed to load data: ${err.message}</p>`;
+          document.getElementById('detail').innerHTML = '<p class="text-sm text-rose-600">No evidence available.</p>';
+          renderFooter(null);
+        }
+      }
+
+      await renderLoader(loadPreferred);
+      sourceSelect.addEventListener('change', () => renderLoader(loadFromSelection));
+      document.getElementById('refreshBtn').addEventListener('click', () => renderLoader(loadFromSelection));
+    }
+
+    init();
+  </script>
+</body>
+</html>
