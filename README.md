@@ -1,6 +1,6 @@
-# PhageMatch (v0.1) — mockable pipeline with locked contracts
+# PhageMatch (v0.1) mockable pipeline with locked contracts
 
-PhageMatch is a **decision-support pipeline stub**: given a host isolate and a phage library, it produces a **ranked shortlist** plus an **audit-friendly evidence bundle**. v0.1 is intentionally minimal but engineered to show how the “real” modules will plug in without changing contracts.
+PhageMatch is a **decision-support pipeline stub**: given a host isolate and a phage library, it produces a **ranked shortlist** plus an **audit-friendly evidence bundle**. v0.1 is intentionally minimal but engineered to show how the real modules will plug in without changing contracts.
 
 - **Single demo command:** `snakemake -s Snakefile --configfile config.yaml --cores 1`
 - **Outputs:** `results/runs/H001/ranking.csv` and `results/runs/H001/evidence_bundle.json` (also pre-generated in `demo_outputs/H001/`)
@@ -66,14 +66,14 @@ H001,P002,2,0.61,mock_sequence_similarity,possible_temperate
 
 ## Repo layout (clean surface area)
 - ![Architecture diagram](docs/images/architecture.png)
-- `Snakefile` → delegates to `workflow/pm_v0_1/Snakefile`
-- `config.yaml` → baseline config (toggle modules here)
-- `profiles/` → suggested module toggles (`test`, `portable`, `accelerated`)
-- `manifests/` → TSV contracts for inputs
-- `data/inputs/` and `data/library/` → tiny demo FASTA/FAA files
-- `demo_outputs/` → committed ranking/evidence/test-plan for H001
-- `docs/architecture/01–05_*.md` → overview, profiles, cache/versioning, feature contracts, output contract
-- `PITCH.md`, `ROADMAP.md` → narrative + milestone plan
+- `Snakefile` -> delegates to `workflow/pm_v0_1/Snakefile`
+- `config.yaml` -> baseline config (toggle modules here)
+- `profiles/` -> suggested module toggles (`test`, `portable`, `accelerated`)
+- `manifests/` -> TSV contracts for inputs
+- `data/inputs/` and `data/library/` -> tiny demo FASTA/FAA files
+- `demo_outputs/` -> committed ranking/evidence/test-plan for H001
+- `docs/architecture/01_system_overview.md` through `docs/architecture/05_output_contract.md` -> overview, profiles, cache/versioning, feature contracts, output contract
+- `PITCH.md`, `ROADMAP.md` -> narrative + milestone plan
 
 ## Contracts and standards
 - **Inputs:** `manifests/phages.tsv` (`phage_id`, `fasta`), `manifests/hosts.tsv` (`host_id`, `genome_fna`, `proteome_faa`).
@@ -90,7 +90,7 @@ H001,P002,2,0.61,mock_sequence_similarity,possible_temperate
 4) Point `databases` paths in `config.yaml` when you plug in safety/structural modules.
 5) Keep `results/` and `cache/` out of git (already ignored).
 
-## Why this stub is “investor-clean”
+## Why this stub is investor-clean
 - Minimal surface area (no personal docs, tiny committed data).
 - Locked contracts and demo outputs that run deterministically.
 - Clear upgrade path in `ROADMAP.md` and module toggles in `config.yaml`.
