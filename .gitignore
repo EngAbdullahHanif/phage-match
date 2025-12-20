@@ -164,3 +164,26 @@ cython_debug/
 
 # Dta Stuff
 data/
+
+# colabfold_cache
+colabfold_cache/
+
+# VS Code
+.vscode/
+
+# HIPSTER
+HIPSTER/
+
+#interproscan
+interproscan-5.65-97.0
+
+
+
+prosite
+PHACTS/
+
+# db
+db/
+
+Miniconda3-latest-MacOSX-x86_64.sh
+

@@ -12,38 +12,20 @@ def load_dna2vec(filepath):
         for line in f:
             values = line.strip().split()
             kmer = values[0]
-            vector = []
-            for v in values[1:]:
-                vector.append(float(v))
-            embeddings[kmer] = np.array(vector)
+            vector = np.array([float(v) for v in values[1:]])
+            embeddings[kmer] = vector
     return embeddings
 
-# !!!not working
+
 def embed_kmers(kmer_file, embeddings):
     """
     Map k-mers from a k-mer frequency file to DNA2Vec embeddings.
     """
-    # Load k-mer frequencies from the input file
+   
     with open(kmer_file, "r") as f:
         kmer_freqs = json.load(f)
-
-
-
-    # # This block of code addresses the issue of inconsistent shapes in the embeddings.
-    # The first loop identifies and sets the first valid embedding as `first_embedding` by ensuring:
-    #   - The embedding is a 1D array (ndim == 1).
-    #   - The embedding has the expected size of 100 (len(emb_array) == 100).
-    # This ensures that any embeddings with incorrect shapes, such as (1,) or other unexpected dimensions, are ignored.
-
-    # If no valid embedding is found, a ValueError is raised to avoid processing invalid inputs.
-
-    # The `embedded_vector` is then initialized with the same shape as `first_embedding` to ensure consistency
-    # during computations and avoid shape mismatch errors.
-
-    # The second loop iterates over all embeddings, skipping any embedding with a shape that does not match `first_embedding`.
-    # This is necessary to handle cases where some embeddings might have inconsistent shapes in the `embeddings` dictionary,
-    # such as (1,) or other incorrect dimensions, which would otherwise cause computation errors.
-
+    
+    # initialize embedded_vector with the same shape as the first embedding vector in the embeddings dictionary
     first_embedding = None
     for emb in embeddings.values():
         emb_array = np.array(emb, dtype=np.float64).flatten()
@@ -129,6 +111,10 @@ def process_embeddings(kmer_dir, embedding_file, output_dir):
     """
     embeddings = load_dna2vec(embedding_file)
 
+    # Debugging: 
+    # for kmer, vector in embeddings.items():
+    #     print(f"k-mer: {kmer}, shape: {vector.shape}")
+
     # Prepare arguments for parallel processing
     args_list = []
     for root, _, files in os.walk(kmer_dir):
@@ -142,16 +128,6 @@ def process_embeddings(kmer_dir, embedding_file, output_dir):
     with Pool(processes=4) as pool:  # Adjust `processes` based on your system
         pool.map(parallel_process_embeddings, args_list)
     
-    #! Debugging
-    # Process embeddings in a single process
-    # count = 0
-    # for args in args_list:
-    #     parallel_process_embeddings(args)
-    #     count += 1
-    #     if count == 50:
-    #         break
-   
-
-    
     print("All embeddings saved successfully.")
+
 

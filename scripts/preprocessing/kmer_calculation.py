@@ -10,7 +10,7 @@ def kmer_frequencies(sequence, k):
     kmer_counts = Counter(kmers)
     total_kmers = sum(kmer_counts.values())
     return {kmer: count / total_kmers for kmer, count in kmer_counts.items()}
-
+  
 def save_kmer(seq_id, kmer_freqs, output_dir):
     """
     Saves k-mer frequencies to a JSON file.
