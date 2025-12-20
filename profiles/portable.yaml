@@ -1,0 +1,10 @@
+profile: portable
+modules:
+  enable_structural_ppi: false
+  enable_host_structure: false
+  enable_sourmash: true
+  enable_safety: false
+  test_mode: false
+params:
+  sourmash_k: 21
+  sourmash_scaled: 2000

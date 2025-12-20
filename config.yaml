@@ -20,6 +20,8 @@ modules:
 params:
   foldseek_evalue_max: 1e-3
   top_n: 10
+  sourmash_k: 21
+  sourmash_scaled: 2000
 
 containers:
   colabfold_image: "ghcr.io/sokrypton/colabfold@sha256:REPLACE_WITH_DIGEST"
@@ -33,3 +35,4 @@ versions:
   hhsearch_db: "pdb70_2024_XX"
   uniclust_db: "uniclust30_2020_06"
   foldseek: "9.427df8a"
+  sourmash: "4.x"

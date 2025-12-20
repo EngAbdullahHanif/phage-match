@@ -4,6 +4,8 @@ import pathlib
 import yaml
 import pandas as pd
 import datetime
+import subprocess
+import tempfile
 
 configfile: "config.yaml"
 
@@ -12,6 +14,11 @@ HOST_MANIFEST = pathlib.Path(config["manifests"]["hosts"])
 CACHE_DIR = pathlib.Path(config["directories"]["cache"])
 RESULTS_DIR = pathlib.Path(config["directories"]["results"])
 TEST_MODE = config["modules"].get("test_mode", False)
+ENABLE_SOURMASH = config["modules"].get("enable_sourmash", False) and not TEST_MODE
+SOURMASH_K = config.get("params", {}).get("sourmash_k", 21)
+SOURMASH_SCALED = config.get("params", {}).get("sourmash_scaled", 2000)
+SOURMASH_VERSION = config.get("versions", {}).get("sourmash")
+SOURMASH_CACHE = CACHE_DIR / "sourmash"
 
 phages_df = pd.read_csv(PHAGE_MANIFEST, sep="\t") if PHAGE_MANIFEST.exists() else pd.DataFrame(columns=["phage_id","fasta"])
 hosts_df = pd.read_csv(HOST_MANIFEST, sep="\t") if HOST_MANIFEST.exists() else pd.DataFrame(columns=["host_id","genome_fna","proteome_faa"])
@@ -49,28 +56,114 @@ rule mock_structures:
             pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
             pathlib.Path(path).write_text(f"MOCK {pathlib.Path(path).stem}\n")
 
+rule sourmash_sketch_phage:
+    input:
+        fasta=lambda wildcards: phages_df.set_index("phage_id").loc[wildcards.phage_id, "fasta"]
+    output:
+        sig=SOURMASH_CACHE / "phages" / "{phage_id}.sig"
+    conda: "envs/sourmash.yml"
+    shell:
+        r"""
+        mkdir -p $(dirname {output.sig})
+        sourmash sketch dna -p k={SOURMASH_K},scaled={SOURMASH_SCALED} {input.fasta} -o {output.sig}
+        """
+
+rule sourmash_sketch_host:
+    input:
+        fasta=lambda wildcards: hosts_df.set_index("host_id").loc[wildcards.host_id, "genome_fna"]
+    output:
+        sig=SOURMASH_CACHE / "hosts" / "{host_id}.sig"
+    conda: "envs/sourmash.yml"
+    shell:
+        r"""
+        mkdir -p $(dirname {output.sig})
+        sourmash sketch dna -p k={SOURMASH_K},scaled={SOURMASH_SCALED} {input.fasta} -o {output.sig}
+        """
+
+rule sourmash_compare:
+    input:
+        phage_sig=rules.sourmash_sketch_phage.output.sig,
+        host_sig=rules.sourmash_sketch_host.output.sig
+    output:
+        json=SOURMASH_CACHE / "{host_id}" / "{phage_id}.json"
+    conda: "envs/sourmash.yml"
+    run:
+        out_path = pathlib.Path(output.json)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        # Compute containment (phage vs host) via sourmash compare matrix
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".csv") as tmp:
+            tmp_path = tmp.name
+        cmd = [
+            "sourmash",
+            "compare",
+            "--containment",
+            "--csv",
+            tmp_path,
+            input.phage_sig,
+            input.host_sig,
+        ]
+        subprocess.run(cmd, check=True)
+        df = pd.read_csv(tmp_path, index_col=0)
+        value = float(df.iloc[0, 1]) if not df.empty else 0.0
+        payload = {
+            "host_id": wildcards.host_id,
+            "phage_id": wildcards.phage_id,
+            "similarity": value,
+            "metric": "containment",
+            "tool": "sourmash",
+            "tool_version": SOURMASH_VERSION,
+            "source": "real",
+        }
+        out_path.write_text(json.dumps(payload))
+
 rule aggregate_rankings:
     input:
         mocks=expand(CACHE_DIR / "phages" / "{phage_id}" / "mock" / "structures" / "{phage_id}.pdb", phage_id=PHAGE_IDS),
-        host_mock=lambda wildcards: CACHE_DIR / "hosts" / wildcards.host_id / "mock" / "structures" / f"{wildcards.host_id}.pdb"
+        host_mock=lambda wildcards: CACHE_DIR / "hosts" / wildcards.host_id / "mock" / "structures" / f"{wildcards.host_id}.pdb",
+        sourmash=lambda wildcards: [
+            SOURMASH_CACHE / wildcards.host_id / f"{pid}.json" for pid in PHAGE_IDS
+        ] if ENABLE_SOURMASH else []
     output:
         ranking=RESULTS_DIR / "{host_id}" / "ranking.csv",
         evidence=RESULTS_DIR / "{host_id}" / "evidence_bundle.json"
     run:
         out_dir = pathlib.Path(output.ranking).parent
         out_dir.mkdir(parents=True, exist_ok=True)
-        # Stable mock contract for ranking.csv
-        rows = [
-            {
-                "host_id": wildcards.host_id,
-                "phage_id": pid,
-                "rank": idx + 1,
-                "confidence_score": 1.0,
-                "primary_reason": "mock",
-                "safety_flags": "",
-            }
-            for idx, pid in enumerate(PHAGE_IDS)
-        ]
+        rows = []
+        sourmash_scores = {}
+        if ENABLE_SOURMASH:
+            for pid in PHAGE_IDS:
+                feature_path = SOURMASH_CACHE / wildcards.host_id / f"{pid}.json"
+                try:
+                    feature = json.loads(feature_path.read_text())
+                    score = float(feature.get("similarity", 0.0))
+                except Exception:
+                    score = 0.0
+                sourmash_scores[pid] = score
+
+            sorted_phages = sorted(PHAGE_IDS, key=lambda pid: sourmash_scores.get(pid, 0.0), reverse=True)
+            for idx, pid in enumerate(sorted_phages):
+                rows.append({
+                    "host_id": wildcards.host_id,
+                    "phage_id": pid,
+                    "rank": idx + 1,
+                    "confidence_score": sourmash_scores.get(pid, 0.0),
+                    "primary_reason": "sourmash_similarity",
+                    "safety_flags": "",
+                })
+        else:
+            rows = [
+                {
+                    "host_id": wildcards.host_id,
+                    "phage_id": pid,
+                    "rank": idx + 1,
+                    "confidence_score": 1.0,
+                    "primary_reason": "mock",
+                    "safety_flags": "",
+                }
+                for idx, pid in enumerate(PHAGE_IDS)
+            ]
+
         if not rows:
             rows = [{
                 "host_id": wildcards.host_id,
@@ -85,7 +178,7 @@ rule aggregate_rankings:
 
         # Evidence bundle with reproducibility metadata
         evidence = {
-            "pipeline_version": "0.1.0-mock",
+            "pipeline_version": "0.1.0",
             "mock": bool(TEST_MODE),
             "run_id": iso_now(),
             "test_mode": bool(TEST_MODE),
@@ -99,6 +192,16 @@ rule aggregate_rankings:
                 "params": config.get("params", {}),
                 "versions": config.get("versions", {}),
             },
+            "features": {
+                "sourmash": {
+                    "status": "ok" if ENABLE_SOURMASH else "skipped",
+                    "source": "real" if ENABLE_SOURMASH else "mock",
+                    "metric": "containment",
+                    "tool": "sourmash",
+                    "tool_version": SOURMASH_VERSION,
+                    "reason": None if ENABLE_SOURMASH else "module_disabled_or_test_mode",
+                }
+            }
         }
         with pathlib.Path(output.evidence).open("w") as f:
             json.dump(evidence, f)

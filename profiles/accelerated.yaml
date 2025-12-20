@@ -1,0 +1,10 @@
+profile: accelerated
+modules:
+  enable_structural_ppi: true
+  enable_host_structure: true
+  enable_sourmash: true
+  enable_safety: true
+  test_mode: false
+params:
+  sourmash_k: 21
+  sourmash_scaled: 2000

@@ -1,0 +1,7 @@
+profile: test
+modules:
+  enable_structural_ppi: false
+  enable_host_structure: false
+  enable_sourmash: false
+  enable_safety: false
+  test_mode: true
