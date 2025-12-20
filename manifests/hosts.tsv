@@ -1,0 +1,2 @@
+host_id	genome_fna	proteome_faa
+H001	data/inputs/hosts/H001.fna	data/inputs/hosts/H001.faa

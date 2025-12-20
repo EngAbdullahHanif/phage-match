@@ -1,0 +1,47 @@
+import hashlib
+import pathlib
+import yaml
+import pandas as pd
+
+configfile: "config.yaml"
+
+PHAGE_MANIFEST = pathlib.Path(config["manifests"]["phages"])
+HOST_MANIFEST = pathlib.Path(config["manifests"]["hosts"])
+CACHE_DIR = pathlib.Path(config["directories"]["cache"])
+RESULTS_DIR = pathlib.Path(config["directories"]["results"])
+TEST_MODE = config["modules"].get("test_mode", False)
+
+phages_df = pd.read_csv(PHAGE_MANIFEST, sep="\t") if PHAGE_MANIFEST.exists() else pd.DataFrame(columns=["phage_id","fasta"])
+hosts_df = pd.read_csv(HOST_MANIFEST, sep="\t") if HOST_MANIFEST.exists() else pd.DataFrame(columns=["host_id","genome_fna","proteome_faa"])
+PHAGE_IDS = phages_df["phage_id"].tolist()
+HOST_IDS = hosts_df["host_id"].tolist()
+
+rule all:
+    input:
+        expand(RESULTS_DIR / "{host_id}" / "ranking.csv", host_id=HOST_IDS),
+        expand(RESULTS_DIR / "{host_id}" / "evidence_bundle.json", host_id=HOST_IDS)
+
+rule mock_structures:
+    input:
+        phage_fasta=lambda wildcards: phages_df.set_index("phage_id").loc[wildcards.phage_id, "fasta"] if not phages_df.empty else "missing",
+        host_fasta=lambda wildcards: hosts_df.set_index("host_id").loc[wildcards.host_id, "genome_fna"] if not hosts_df.empty else "missing"
+    output:
+        CACHE_DIR / "phages" / "{phage_id}" / "mock" / "structures" / "{phage_id}.pdb",
+        CACHE_DIR / "hosts" / "{host_id}" / "mock" / "structures" / "{host_id}.pdb"
+    run:
+        for path in output:
+            pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
+            pathlib.Path(path).write_text(f"MOCK {pathlib.Path(path).stem}\n")
+
+rule aggregate_rankings:
+    input:
+        mocks=expand(CACHE_DIR / "phages" / "{phage_id}" / "mock" / "structures" / "{phage_id}.pdb", phage_id=PHAGE_IDS),
+        host_mock=lambda wildcards: CACHE_DIR / "hosts" / wildcards.host_id / "mock" / "structures" / f"{wildcards.host_id}.pdb"
+    output:
+        ranking=RESULTS_DIR / "{host_id}" / "ranking.csv",
+        evidence=RESULTS_DIR / "{host_id}" / "evidence_bundle.json"
+    run:
+        out_dir = pathlib.Path(output.ranking).parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pathlib.Path(output.ranking).write_text("phage_id,score\n")
+        pathlib.Path(output.evidence).write_text("{\"mock\": true}\n")
