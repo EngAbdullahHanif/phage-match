@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 
@@ -40,14 +43,48 @@ def list_phage_ids(manifest_path: str):
 def list_host_ids(manifest_path: str):
     return [r["host_id"] for r in read_tsv(manifest_path)]
 
-PHAGE_MANIFEST = "manifests/phages.tsv"
-HOST_MANIFEST = "manifests/hosts.tsv"
+def sha256_or_none(path: str | Path) -> str | None:
+    p = Path(path)
+    if not p.exists():
+        return None
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def iso_utc() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+def get_phage_rows():
+    return read_tsv(PHAGE_MANIFEST)
+
+def get_host_rows():
+    return read_tsv(HOST_MANIFEST)
+
+def phage_fasta(phage_id: str) -> str:
+    return next(r["fasta"] for r in get_phage_rows() if r["phage_id"] == phage_id)
+
+def host_genome(host_id: str) -> str:
+    return next(r["genome_fna"] for r in get_host_rows() if r["host_id"] == host_id)
+
+def host_proteome(host_id: str) -> str:
+    return next(r["proteome_faa"] for r in get_host_rows() if r["host_id"] == host_id)
+
+_manifests_cfg = (config.get("manifests", {}) or {})
+PHAGE_MANIFEST = _manifests_cfg.get("phages", "manifests/phages.tsv")
+HOST_MANIFEST = _manifests_cfg.get("hosts", "manifests/hosts.tsv")
 
 PHAGE_IDS = list_phage_ids(PHAGE_MANIFEST)
 HOST_IDS = list_host_ids(HOST_MANIFEST)
 
-CACHE_DIR = Path(config["directories"]["cache"])
-RANKINGS_DIR = Path(config["directories"]["rankings"])
+_dirs_cfg = (config.get("directories", {}) or {})
+CACHE_DIR = Path(_dirs_cfg.get("cache", "cache"))
+RANKINGS_DIR = Path(_dirs_cfg.get("rankings", "rankings"))
+RESULTS_VIEW_DIR = None
+_results_viewer = _dirs_cfg.get("results_viewer")
+if _results_viewer:
+    RESULTS_VIEW_DIR = Path(_results_viewer)
 
 # Feature artefact locations
 SIM_DIR = CACHE_DIR / "features" / "similarity"
@@ -80,6 +117,16 @@ def ranking_csv(host_id: str) -> str:
 def evidence_json(host_id: str) -> str:
     return str(RANKINGS_DIR / host_id / "evidence_bundle.json")
 
+def results_ranking_csv(host_id: str) -> str:
+    if RESULTS_VIEW_DIR is None:
+        raise ValueError("results_viewer directory is not configured.")
+    return str(RESULTS_VIEW_DIR / host_id / "ranking.csv")
+
+def results_evidence_json(host_id: str) -> str:
+    if RESULTS_VIEW_DIR is None:
+        raise ValueError("results_viewer directory is not configured.")
+    return str(RESULTS_VIEW_DIR / host_id / "evidence_bundle.json")
+
 def similarity_json(host_id: str, phage_id: str) -> str:
     return str(SIM_DIR / host_id / f"{phage_id}.json")
 
@@ -88,6 +135,18 @@ def structural_json(host_id: str, phage_id: str) -> str:
 
 def safety_json(phage_id: str) -> str:
     return str(SAFETY_DIR / f"{phage_id}.json")
+
+def similarity_meta_path(host_id: str) -> str:
+    return str(SIM_DIR / host_id / "meta.json")
+
+def structural_meta_path(host_id: str) -> str:
+    return str(STRUCT_DIR / host_id / "meta.json")
+
+def safety_meta_path() -> str:
+    return str(SAFETY_DIR / "meta.json")
+
+def test_plan_md(host_id: str) -> str:
+    return str(RANKINGS_DIR / host_id / "test_plan.md")
 
 def structural_outputs(wc):
     return [structural_json(wc.host_id, pid) for pid in PHAGE_IDS]
@@ -103,7 +162,13 @@ rule all:
     input:
         expand(str(RANKINGS_DIR / "{host_id}" / "ranking.csv"), host_id=HOST_IDS),
         expand(str(RANKINGS_DIR / "{host_id}" / "evidence_bundle.json"), host_id=HOST_IDS),
-        expand(str(RANKINGS_DIR / "{host_id}" / "VALIDATED.txt"), host_id=HOST_IDS)
+        expand(str(RANKINGS_DIR / "{host_id}" / "test_plan.md"), host_id=HOST_IDS),
+        expand(str(RANKINGS_DIR / "{host_id}" / "VALIDATED.txt"), host_id=HOST_IDS),
+        *(expand(str(RESULTS_VIEW_DIR / "{host_id}" / "ranking.csv"), host_id=HOST_IDS) if RESULTS_VIEW_DIR else []),
+        *(expand(str(RESULTS_VIEW_DIR / "{host_id}" / "evidence_bundle.json"), host_id=HOST_IDS) if RESULTS_VIEW_DIR else []),
+        *(expand(similarity_meta_path("{host_id}"), host_id=HOST_IDS) if ENABLE_SIM else []),
+        *(expand(structural_meta_path("{host_id}"), host_id=HOST_IDS) if ENABLE_STRUCT else []),
+        *([safety_meta_path()] if ENABLE_SAFETY else [])
 
 
 # ---------- Similarity module (sourmash) ----------
@@ -153,6 +218,38 @@ rule similarity_feature:
         )
     shell:
         "{params.cmd}"
+
+
+rule similarity_meta:
+    input:
+        similarity_outputs
+    output:
+        similarity_meta_path("{host_id}")
+    run:
+        out = Path(output[0])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        phages = [{"phage_id": pid, "fasta": phage_fasta(pid), "sha256": sha256_or_none(phage_fasta(pid))} for pid in PHAGE_IDS]
+        meta = {
+            "module": "similarity",
+            "generated_at": iso_utc(),
+            "test_mode": TEST_MODE,
+            "tool": "mock" if TEST_MODE else "sourmash",
+            "tool_version": (config.get("versions", {}) or {}).get("sourmash"),
+            "params": {
+                "sourmash_k": (config.get("params", {}) or {}).get("sourmash_k"),
+                "sourmash_scaled": (config.get("params", {}) or {}).get("sourmash_scaled"),
+            },
+            "inputs": {
+                "host_genome": {"path": host_genome(wildcards.host_id), "sha256": sha256_or_none(host_genome(wildcards.host_id))},
+                "host_proteome": {"path": host_proteome(wildcards.host_id), "sha256": sha256_or_none(host_proteome(wildcards.host_id))},
+                "phages": phages,
+            },
+            "manifest_hashes": {
+                Path(PHAGE_MANIFEST).name: sha256_or_none(PHAGE_MANIFEST),
+                Path(HOST_MANIFEST).name: sha256_or_none(HOST_MANIFEST),
+            },
+        }
+        out.write_text(json.dumps(meta, indent=2))
 
 
 # ---------- Safety module (abricate + lysogeny flags) ----------
@@ -205,6 +302,42 @@ rule safety_feature:
         )
     shell:
         "{params.cmd}"
+
+
+rule safety_meta:
+    input:
+        safety_outputs
+    output:
+        safety_meta_path()
+    run:
+        out = Path(output[0])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        phage_inputs = []
+        for pid in PHAGE_IDS:
+            fasta = phage_fasta(pid)
+            abricate = CACHE_DIR / "safety" / "abricate" / f"{pid}.tsv"
+            gff = CACHE_DIR / "annotations" / "phages" / pid / f"{pid}.gff"
+            phage_inputs.append({
+                "phage_id": pid,
+                "fasta": {"path": fasta, "sha256": sha256_or_none(fasta)},
+                "abricate_tsv": {"path": str(abricate), "sha256": sha256_or_none(abricate)},
+                "gff": {"path": str(gff), "sha256": sha256_or_none(gff)},
+            })
+        meta = {
+            "module": "safety",
+            "generated_at": iso_utc(),
+            "test_mode": TEST_MODE,
+            "tool": "mock" if TEST_MODE else "abricate/prokka",
+            "tool_version": (config.get("versions", {}) or {}).get("abricate"),
+            "params": {},
+            "inputs": {
+                "phages": phage_inputs,
+            },
+            "manifest_hashes": {
+                Path(PHAGE_MANIFEST).name: sha256_or_none(PHAGE_MANIFEST),
+            },
+        }
+        out.write_text(json.dumps(meta, indent=2))
 
 
 # ---------- Structural module (Foldseek summaries) ----------
@@ -280,6 +413,38 @@ rule structural_features:
         "{params.cmd}"
 
 
+rule structural_meta:
+    input:
+        rules.structural_features.output
+    output:
+        structural_meta_path("{host_id}")
+    run:
+        out = Path(output[0])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        hits = FOLDSEEK_DIR / "results" / wildcards.host_id / "hits.tsv"
+        meta = {
+            "module": "structural",
+            "generated_at": iso_utc(),
+            "test_mode": TEST_MODE,
+            "tool": "mock" if TEST_MODE else "foldseek",
+            "tool_version": (config.get("versions", {}) or {}).get("foldseek"),
+            "params": {
+                "foldseek_evalue_max": (config.get("params", {}) or {}).get("foldseek_evalue_max"),
+            },
+            "inputs": {
+                "host_id": wildcards.host_id,
+                "hits_tsv": {"path": str(hits), "sha256": sha256_or_none(hits)},
+                "phage_structures_dir": str(PHAGE_STRUCT_DIR),
+                "host_structures_dir": str(HOST_STRUCT_DIR / wildcards.host_id),
+            },
+            "manifest_hashes": {
+                Path(PHAGE_MANIFEST).name: sha256_or_none(PHAGE_MANIFEST),
+                Path(HOST_MANIFEST).name: sha256_or_none(HOST_MANIFEST),
+            },
+        }
+        out.write_text(json.dumps(meta, indent=2))
+
+
 # ---------- Decision bundle assembly ----------
 rule decision_bundle:
     input:
@@ -298,6 +463,21 @@ rule decision_bundle:
         "--similarity-dir {SIM_DIR} --structural-dir {STRUCT_DIR} --safety-dir {SAFETY_DIR} "
         "--out-ranking {output.ranking} --out-evidence {output.evidence}"
 
+rule test_plan:
+    input:
+        ranking=lambda wc: ranking_csv(wc.host_id),
+        evidence=lambda wc: evidence_json(wc.host_id)
+    output:
+        test_plan_md("{host_id}")
+    params:
+        top_n=lambda wc: (config.get("params", {}) or {}).get("top_n", 10)
+    conda:
+        CORE_ENV
+    threads: 1
+    shell:
+        "python scripts/build_test_plan.py --ranking {input.ranking} --evidence {input.evidence} "
+        "--out {output} --top-n {params.top_n}"
+
 # Validate outputs (optional but useful for CI/demo)
 rule validate_decision_bundle:
     input:
@@ -313,6 +493,22 @@ rule validate_decision_bundle:
         "python scripts/validate_decision_bundle.py --ranking {input.ranking} "
         "--evidence {input.evidence} --schema {input.schema} "
         "&& echo. > {output}"
+
+if RESULTS_VIEW_DIR:
+    rule publish_results:
+        input:
+            ranking=lambda wc: ranking_csv(wc.host_id),
+            evidence=lambda wc: evidence_json(wc.host_id)
+        output:
+            ranking=str(RESULTS_VIEW_DIR / "{host_id}" / "ranking.csv"),
+            evidence=str(RESULTS_VIEW_DIR / "{host_id}" / "evidence_bundle.json")
+        run:
+            out_rank = Path(output.ranking)
+            out_rank.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(input.ranking, out_rank)
+            out_ev = Path(output.evidence)
+            out_ev.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(input.evidence, out_ev)
 
 rule validate:
     input:

@@ -1,8 +1,8 @@
 project: "phagematch_v0_1"
 
 manifests:
-  phages: "manifests/phages.tsv"
-  hosts: "manifests/hosts.tsv"
+  phages: "manifests/phages_real.tsv"
+  hosts: "manifests/hosts_real.tsv"
 
 directories:
   cache: "cache"

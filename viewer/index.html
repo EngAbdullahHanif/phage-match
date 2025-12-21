@@ -68,6 +68,19 @@
       });
     }
 
+    function normalizeSafetyFlags(value) {
+      if (value == null) return [];
+      if (Array.isArray(value)) {
+        return value.map(v => String(v).trim()).filter(v => v && v.toLowerCase() !== 'none');
+      }
+      if (typeof value === 'string') {
+        const raw = value.trim();
+        if (!raw || raw.toLowerCase() === 'none') return [];
+        return raw.split(/[,;|]/).map(v => v.trim()).filter(v => v && v.toLowerCase() !== 'none');
+      }
+      return [];
+    }
+
     function badge(text, tone = 'slate') {
       const tones = {
         slate: 'bg-slate-100 text-slate-800 border-slate-200',
@@ -218,10 +231,14 @@
       (evidence.shortlist || []).forEach(item => evMap.set(item.phage_id, item));
       const shortlist = ranking.map(row => {
         const ev = evMap.get(row.phage_id) || {};
+        const rowFlags = normalizeSafetyFlags(row.safety_flags);
+        const evFlags = normalizeSafetyFlags(ev.safety_flags);
         return {
           ...row,
+          rank: row.rank != null ? Number(row.rank) : (ev.rank ?? 0),
+          confidence_score: row.confidence_score != null ? Number(row.confidence_score) : (ev.confidence_score ?? 0),
           primary_reason: row.primary_reason || ev.primary_reason || 'mocked',
-          safety_flags: row.safety_flags && row.safety_flags.length ? row.safety_flags : (ev.safety_flags || []),
+          safety_flags: rowFlags.length ? rowFlags : evFlags,
           evidence: ev.evidence || {},
           next_best_action: ev.next_best_action || 'Not provided'
         };
@@ -236,7 +253,8 @@
       const preferred = params.get('preferred') || 'results';
 
       const sources = [
-        { id: 'results', label: `Latest run (rankings/${hostId})`, path: `../rankings/${hostId}` },
+        { id: 'results', label: `Latest run (results/${hostId})`, path: `../results/${hostId}` },
+        { id: 'rankings', label: `Rankings (rankings/${hostId})`, path: `../rankings/${hostId}` },
         { id: 'demo', label: `Demo pack (demo_outputs/${hostId})`, path: `../demo_outputs/${hostId}` },
       ];
       const sourceSelect = document.getElementById('sourceSelect');
@@ -247,23 +265,37 @@
         sourceSelect.appendChild(opt);
       });
 
-      async function loadPreferred() {
-        let current = sources.find(s => s.id === preferred) || sources[0];
-        try {
-          const data = await loadSource(current);
-          sourceSelect.value = current.id;
-          return { current, data };
-        } catch (err) {
-          // fallback to demo
-          const demo = sources.find(s => s.id === 'demo');
-          const data = await loadSource(demo);
-          sourceSelect.value = demo.id;
-          return { current: demo, data };
+      async function loadWithFallback(ordered) {
+        for (const candidate of ordered) {
+          try {
+            const data = await loadSource(candidate);
+            sourceSelect.value = candidate.id;
+            return { current: candidate, data };
+          } catch (err) {
+            // try next source
+          }
         }
+        throw new Error('No data sources available.');
+      }
+
+      async function loadPreferred() {
+        const ordered = [
+          sources.find(s => s.id === preferred),
+          ...sources.filter(s => s.id !== preferred),
+        ].filter(Boolean);
+        return loadWithFallback(ordered);
       }
 
       async function loadFromSelection() {
         const selected = sources.find(s => s.id === sourceSelect.value) || sources[0];
+        if (selected.id === 'results') {
+          const ordered = [
+            selected,
+            sources.find(s => s.id === 'rankings'),
+            sources.find(s => s.id === 'demo'),
+          ].filter(Boolean);
+          return loadWithFallback(ordered);
+        }
         const data = await loadSource(selected);
         return { current: selected, data };
       }

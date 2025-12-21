@@ -28,6 +28,7 @@ Outputs (per host run):
 ```
 rankings/<host_id>/ranking.csv
 rankings/<host_id>/evidence_bundle.json
+rankings/<host_id>/test_plan.md
 ```
 
 Inspect without running:
@@ -38,6 +39,12 @@ Inspect without running:
 Viewer (zero-build, static):
 - Run: `powershell -ExecutionPolicy Bypass -File .\run_demo.ps1`
 - This runs the pipeline (unless `-DemoOnly`), starts a tiny local server, and opens the viewer. Requires `python` on PATH.
+
+Demo launcher shortcuts (PowerShell):
+```powershell
+.\run_demo.ps1 -DemoOnly
+.\run_demo.ps1 -Reset
+```
 
 ## v0.1 scope
 
@@ -79,6 +86,12 @@ H001,P002,2,0.61,sequence_similarity,possible_temperate
 **`evidence_bundle.json`** (UI + audit)
 - Schema: `contracts/decision_bundle/evidence_bundle.schema.json`
 - Contains module statuses, params/versions snapshots, and a `shortlist` array with embedded evidence.
+
+## Data policy (demo vs real)
+
+- The repo **includes tiny mock inputs** in `data/` and `manifests/*.tsv` so GitHub users can run the demo end-to-end.
+- **Real datasets should stay local** (not committed). Point the manifests to local paths; absolute or relative paths both work.
+- Templates already exist: `manifests/hosts.tsv`, `manifests/phages.tsv`, and the larger examples `manifests/hosts_real.tsv`, `manifests/phages_real.tsv`.
 
 ## Running with real data
 

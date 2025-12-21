@@ -24,3 +24,7 @@ Top-level fields:
 Schema: `contracts/decision_bundle/evidence_bundle.schema.json`
 
 This contract is designed to be UI-ready and audit-friendly.
+
+## test_plan.md (optional)
+- Lightweight markdown summary of top-ranked candidates and next actions.
+- Generated from `ranking.csv` + `evidence_bundle.json`.
