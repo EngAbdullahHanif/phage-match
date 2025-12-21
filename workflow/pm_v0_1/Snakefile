@@ -4,8 +4,29 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+import shutil
 
 
+
+def _find_repo_root(start: Path) -> Path:
+    for p in [start] + list(start.parents):
+        if (p / "envs").is_dir():
+            return p
+    return start
+
+try:
+    _snakefile_dir = Path(workflow.snakefile).resolve().parent
+except Exception:
+    _snakefile_dir = Path.cwd()
+
+REPO_ROOT = _find_repo_root(_snakefile_dir)
+ENVS_DIR = REPO_ROOT / "envs"
+
+def conda_env(filename: str) -> str:
+    """Return absolute path to an env YAML in <repo>/envs/."""
+    return str(ENVS_DIR / filename)
+
+CONDA_AVAILABLE = shutil.which("conda") is not None
 
 # ---------- Helpers ----------
 def read_tsv(path: str):
@@ -45,11 +66,11 @@ ENABLE_STRUCT = bool(config.get("modules", {}).get("enable_structural_ppi", Fals
 ENABLE_SAFETY = bool(config.get("modules", {}).get("enable_safety", False))
 
 # Conda env choices (avoid heavy tool installs in test mode)
-CORE_ENV = "envs/core.yml"
-SOURMASH_ENV = CORE_ENV if TEST_MODE else "envs/sourmash.yml"
-FOLDSEEK_ENV = CORE_ENV if TEST_MODE else "envs/foldseek.yml"
-PROKKA_ENV = CORE_ENV if TEST_MODE else "envs/prokka.yml"
-ABRICATE_ENV = CORE_ENV if TEST_MODE else "envs/abricate.yml"
+CORE_ENV = conda_env("core.yml") if CONDA_AVAILABLE else None
+SOURMASH_ENV = CORE_ENV if TEST_MODE else (conda_env("sourmash.yml") if CONDA_AVAILABLE else None)
+FOLDSEEK_ENV = CORE_ENV if TEST_MODE else (conda_env("foldseek.yml") if CONDA_AVAILABLE else None)
+PROKKA_ENV = CORE_ENV if TEST_MODE else (conda_env("prokka.yml") if CONDA_AVAILABLE else None)
+ABRICATE_ENV = CORE_ENV if TEST_MODE else (conda_env("abricate.yml") if CONDA_AVAILABLE else None)
 
 
 # ---------- Output targets ----------
@@ -250,9 +271,9 @@ rule structural_features:
     params:
         phage_ids=",".join(PHAGE_IDS),
         out_dir=lambda wc: str(STRUCT_DIR / wc.host_id),
-        cmd=lambda wc, input, output, params: (
-            f"python scripts/modules/foldseek_summarise.py --host-id {wc.host_id} --phage-ids {params.phage_ids} "
-            f"--out-dir {params.out_dir} "
+        cmd=lambda wc, input, output: (
+            f"python scripts/modules/foldseek_summarise.py --host-id {wc.host_id} --phage-ids {','.join(PHAGE_IDS)} "
+            f"--out-dir {STRUCT_DIR / wc.host_id} "
             + ("--mock" if TEST_MODE else f"--hits-tsv {input['hits']}")
         )
     shell:
@@ -262,9 +283,9 @@ rule structural_features:
 # ---------- Decision bundle assembly ----------
 rule decision_bundle:
     input:
-        similarity = similarity_outputs if ENABLE_SIM else [],
-        structural = (lambda wc: str(STRUCT_DIR / wc.host_id)) if ENABLE_STRUCT else [],
-        safety = safety_outputs() if ENABLE_SAFETY else []
+        similarity = (lambda wc: expand(rules.similarity_feature.output, host_id=wc.host_id, phage_id=PHAGE_IDS)) if ENABLE_SIM else [],
+        structural = rules.structural_features.output if ENABLE_STRUCT else [],
+        safety = (lambda wc: expand(rules.safety_feature.output, phage_id=PHAGE_IDS)) if ENABLE_SAFETY else []
     output:
         ranking=str(RANKINGS_DIR / "{host_id}" / "ranking.csv"),
         evidence=str(RANKINGS_DIR / "{host_id}" / "evidence_bundle.json")
@@ -272,18 +293,10 @@ rule decision_bundle:
         CORE_ENV
     threads: 1
     shell:
-        r"""
-        python scripts/assemble_decision_bundle.py \
-          --host-id {wildcards.host_id} \
-          --config config.yaml \
-          --phage-manifest {PHAGE_MANIFEST} \
-          --host-manifest {HOST_MANIFEST} \
-          --similarity-dir {SIM_DIR} \
-          --structural-dir {STRUCT_DIR} \
-          --safety-dir {SAFETY_DIR} \
-          --out-ranking {output.ranking} \
-          --out-evidence {output.evidence}
-        """
+        "python scripts/assemble_decision_bundle.py --host-id {wildcards.host_id} "
+        "--config config.yaml --phage-manifest {PHAGE_MANIFEST} --host-manifest {HOST_MANIFEST} "
+        "--similarity-dir {SIM_DIR} --structural-dir {STRUCT_DIR} --safety-dir {SAFETY_DIR} "
+        "--out-ranking {output.ranking} --out-evidence {output.evidence}"
 
 # Validate outputs (optional but useful for CI/demo)
 rule validate_decision_bundle:
@@ -297,7 +310,10 @@ rule validate_decision_bundle:
         CORE_ENV
     threads: 1
     shell:
-        r"""
-        python scripts/validate_decision_bundle.py --ranking {input.ranking} --evidence {input.evidence} --schema {input.schema}
-        touch {output}
-        """
+        "python scripts/validate_decision_bundle.py --ranking {input.ranking} "
+        "--evidence {input.evidence} --schema {input.schema} "
+        "&& echo. > {output}"
+
+rule validate:
+    input:
+        expand(str(RANKINGS_DIR / "{host_id}" / "VALIDATED.txt"), host_id=HOST_IDS)

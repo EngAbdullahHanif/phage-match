@@ -1,0 +1,30 @@
+host: DESKTOP-RIOPIIU
+Building DAG of jobs...
+Provided cores: 1 (use --cores to define parallelism)
+Rules claiming more threads will be scaled down.
+Conda environments: ignored
+Job stats:
+job                    count
+-------------------  -------
+decision_bundle            1
+safety_feature             3
+similarity_feature         3
+structural_features        1
+total                      8
+
+Select jobs to execute...
+Execute 1 jobs...
+
+[Sun Dec 21 01:14:29 2025]
+localrule safety_feature:
+    output: cache/features/safety/P001.json
+    jobid: 5
+    reason: Forced execution
+    wildcards: phage_id=P001
+    resources: tmpdir=C:\Users\egzbi\AppData\Local\Temp
+
+python scripts/modules/safety_compile.py --phage-id P001 --out cache/features/safety/P001.json --mock
+WorkflowError:
+Error running conda info. Is conda installed and accessible? Error: Command 'conda info --json' returned non-zero exit status 1.
+WorkflowError:
+Error running conda info. Is conda installed and accessible? Error: Command 'conda info --json' returned non-zero exit status 1.

@@ -1,0 +1,28 @@
+host: DESKTOP-RIOPIIU
+Building DAG of jobs...
+Provided cores: 1 (use --cores to define parallelism)
+Rules claiming more threads will be scaled down.
+Job stats:
+job                         count
+------------------------  -------
+validate_decision_bundle        1
+total                           1
+
+Select jobs to execute...
+Execute 1 jobs...
+
+[Sun Dec 21 01:23:17 2025]
+localrule validate_decision_bundle:
+    input: rankings\H001\ranking.csv, rankings\H001\evidence_bundle.json, contracts/decision_bundle/evidence_bundle.schema.json
+    output: rankings/H001/VALIDATED.txt
+    jobid: 0
+    reason: Missing output files: rankings/H001/VALIDATED.txt
+    wildcards: host_id=H001
+    resources: tmpdir=C:\Users\egzbi\AppData\Local\Temp
+
+python scripts/validate_decision_bundle.py --ranking rankings\H001\ranking.csv --evidence rankings\H001\evidence_bundle.json --schema contracts/decision_bundle/evidence_bundle.schema.json && echo. > rankings/H001/VALIDATED.txt
+Touching output file rankings/H001/VALIDATED.txt.
+[Sun Dec 21 01:23:17 2025]
+Finished job 0.
+1 of 1 steps (100%) done
+Complete log: .snakemake\log\2025-12-21T012317.256442.snakemake.log

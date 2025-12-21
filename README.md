@@ -22,6 +22,8 @@ Run the deterministic demo (test profile / mocked modules):
 snakemake -s Snakefile --configfile config.yaml --cores 1
 ```
 
+Note: If `conda` is not on PATH, the workflow skips conda envs automatically; this is fine for mocked runs. Use `--use-conda` only when you want real tools.
+
 Outputs (per host run):
 ```
 rankings/<host_id>/ranking.csv
@@ -92,6 +94,11 @@ H001,P002,2,0.61,sequence_similarity,possible_temperate
 3) Run, e.g. portable:
 ```bash
 snakemake -s Snakefile --configfile config.yaml --configfile profiles/portable.yaml --cores 4 --use-conda
+```
+
+Helper target:
+```bash
+snakemake -s Snakefile --configfile config.yaml --cores 1 validate
 ```
 
 ## Notes

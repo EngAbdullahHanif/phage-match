@@ -1,0 +1,9 @@
+host: DESKTOP-RIOPIIU
+Building DAG of jobs...
+InputFunctionException in rule structural_features in file C:\GIT\phage-match\workflow/pm_v0_1/Snakefile, line 242:
+Error:
+  TypeError: <lambda>() missing 1 required positional argument: 'params'
+Wildcards:
+  host_id=H001
+Traceback:
+ (rule structural_features, line 458, C:\GIT\phage-match\workflow/pm_v0_1/Snakefile)
