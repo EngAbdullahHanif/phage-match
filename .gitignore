@@ -39,6 +39,7 @@ MANIFEST
 .tox/
 .nox/
 .cache/
+.snakemake/
 
 # Docs build
 docs/_build/
