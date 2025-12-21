@@ -1,0 +1,11 @@
+biopython
+jsonschema
+matplotlib
+numpy
+pandas
+pyyaml
+requests
+scikit-learn
+seaborn
+tensorflow
+tqdm
