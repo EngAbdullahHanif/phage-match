@@ -80,8 +80,8 @@ def safety_outputs():
 
 rule all:
     input:
-        expand(ranking_csv, host_id=HOST_IDS),
-        expand(evidence_json, host_id=HOST_IDS),
+        expand(str(RANKINGS_DIR / "{host_id}" / "ranking.csv"), host_id=HOST_IDS),
+        expand(str(RANKINGS_DIR / "{host_id}" / "evidence_bundle.json"), host_id=HOST_IDS),
         expand(str(RANKINGS_DIR / "{host_id}" / "VALIDATED.txt"), host_id=HOST_IDS)
 
 
@@ -117,10 +117,10 @@ rule sourmash_sketch_host:
 
 rule similarity_feature:
     input:
-        lambda wc: {} if TEST_MODE else {"host_sig": str(CACHE_DIR / "sourmash" / "hosts" / f"{wc.host_id}.sig"),
+        lambda wc: [] if TEST_MODE else {"host_sig": str(CACHE_DIR / "sourmash" / "hosts" / f"{wc.host_id}.sig"),
                                          "phage_sig": str(CACHE_DIR / "sourmash" / "phages" / f"{wc.phage_id}.sig")}
     output:
-        lambda wc: similarity_json(wc.host_id, wc.phage_id)
+        str(SIM_DIR / "{host_id}" / "{phage_id}.json")
     conda:
         SOURMASH_ENV
     threads: 1
@@ -168,12 +168,12 @@ rule abricate_vfdb_phage:
 
 rule safety_feature:
     input:
-        lambda wc: {} if TEST_MODE else {
+        lambda wc: [] if TEST_MODE else {
             "abricate": str(CACHE_DIR / "safety" / "abricate" / f"{wc.phage_id}.tsv"),
             "gff": str(CACHE_DIR / "annotations" / "phages" / f"{wc.phage_id}" / f"{wc.phage_id}.gff"),
         }
     output:
-        lambda wc: safety_json(wc.phage_id)
+        str(SAFETY_DIR / "{phage_id}.json")
     conda:
         CORE_ENV
     threads: 1
@@ -241,9 +241,9 @@ rule foldseek_search_host_vs_phage:
 
 rule structural_features:
     input:
-        lambda wc: {} if TEST_MODE else {"hits": str(FOLDSEEK_DIR / "results" / wc.host_id / "hits.tsv")}
+        lambda wc: [] if TEST_MODE else {"hits": str(FOLDSEEK_DIR / "results" / wc.host_id / "hits.tsv")}
     output:
-        structural_outputs
+        directory(str(STRUCT_DIR / "{host_id}"))
     conda:
         CORE_ENV
     threads: 1
@@ -263,11 +263,11 @@ rule structural_features:
 rule decision_bundle:
     input:
         similarity = similarity_outputs if ENABLE_SIM else [],
-        structural = structural_outputs if ENABLE_STRUCT else [],
+        structural = (lambda wc: str(STRUCT_DIR / wc.host_id)) if ENABLE_STRUCT else [],
         safety = safety_outputs() if ENABLE_SAFETY else []
     output:
-        ranking=lambda wc: ranking_csv(wc.host_id),
-        evidence=lambda wc: evidence_json(wc.host_id)
+        ranking=str(RANKINGS_DIR / "{host_id}" / "ranking.csv"),
+        evidence=str(RANKINGS_DIR / "{host_id}" / "evidence_bundle.json")
     conda:
         CORE_ENV
     threads: 1

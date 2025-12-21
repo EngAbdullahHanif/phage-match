@@ -1,0 +1,7 @@
+host: DESKTOP-RIOPIIU
+Building DAG of jobs...
+InputFunctionException in rule safety_feature in file C:\GIT\phage-match\workflow/pm_v0_1/Snakefile, line 169:
+Error:
+  Function did not return str or iterable of str. Encountered: [{}] (<class 'list'>)
+Wildcards:
+  phage_id=P001 (rule safety_feature, line 289, C:\GIT\phage-match\workflow/pm_v0_1/Snakefile)
