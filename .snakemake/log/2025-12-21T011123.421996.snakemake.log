@@ -1,9 +1,0 @@
-host: DESKTOP-RIOPIIU
-Building DAG of jobs...
-MissingInputException in rule validate_decision_bundle in file C:\GIT\phage-match\workflow\pm_v0_1\Snakefile, line 297:
-Missing input files for rule validate_decision_bundle:
-    output: rankings/H001/VALIDATED.txt
-    wildcards: host_id=H001
-    affected files:
-        rankings\H001\ranking.csv
-        rankings\H001\evidence_bundle.json
