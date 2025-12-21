@@ -1,4 +1,0 @@
-host_id,phage_id,rank,confidence_score,primary_reason,safety_flags
-H001,P001,1,0.92,mock_structural_support,none
-H001,P002,2,0.61,mock_sequence_similarity,possible_temperate
-H001,P003,3,0.18,weak_evidence,vfdb_hit

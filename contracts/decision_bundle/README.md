@@ -43,4 +43,5 @@ Top-level fields:
 
 ## Example
 
-See `examples/` (and `demo_outputs/` at repo root).
+Canonical demo bundle lives at `demo_outputs/H001/`.
+`examples/` only contains a pointer to avoid drift.
