@@ -33,3 +33,11 @@ This roadmap is intentionally contract-first: downstream consumers rely on the D
 - LIMS/Lab notebook export hooks
 - Phage bank catalogue integration
 - Partner-facing dashboards
+
+## Longer-term direction (3-5 years)
+- End-to-end "digital phagogram": isolate -> shortlist -> lab validation -> feedback loop
+- RBP-centric protein language model features to improve host-range signal and zero-shot generalisation
+- Graph/hypergraph inference to model host-phage-resistance ecosystems (beyond pairwise prediction)
+- Active-learning driven experiment selection to maximise information gain per assay
+- Biofilm/in-vivo constraints and phage-antibiotic synergy scoring as first-class ranking inputs
+- Evidence registry outputs aligned with GMP/QC and standardised PST workflows

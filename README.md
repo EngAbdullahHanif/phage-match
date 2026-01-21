@@ -61,6 +61,19 @@ Explicitly out of scope for v0.1:
 - LIMS integration
 - perfect lifestyle prediction
 
+## Field direction (why now)
+
+The broader phage + AI landscape is shifting toward faster, standardised, and scalable selection workflows:
+
+- **Digital phagogram:** AI triage shortlists the most likely candidates; wet-lab PST remains the arbiter.
+- **Protein language models for RBPs:** ProtT5/ESM-class embeddings become the default host-range signal.
+- **Graph/hypergraph reasoning:** models move beyond pairwise prediction into ecosystem context.
+- **GMP + QC standardisation:** reproducible phage libraries and PST workflows become formal requirements.
+- **Evidence momentum:** regulators and policy bodies are pushing for registries and trial-grade evidence.
+
+PhageMatch is positioned as an auditable shortlist + evidence bundle that plugs into these workflows and
+can absorb feedback from lab outcomes (see `ROADMAP.md`).
+
 ## Repo layout
 
 - `Snakefile` -> delegates to `workflow/pm_v0_1/Snakefile`
@@ -118,6 +131,13 @@ snakemake -s Snakefile --configfile config.yaml --cores 1 validate
 - Snakemake is the orchestrator and single source of truth. `legacy/pipeline_main.py` is deprecated.
 - Cache-first compute model: phage library artefacts are cached once; hosts are processed on-demand.
 - PHASTER is not a primary axis (kept as optional legacy enrichment).
+
+## Sources (recent, non-exhaustive)
+- https://experiments.springernature.com/nature/primers/10.1038/s43586-024-00377-5
+- https://pubmed.ncbi.nlm.nih.gov/40515393/
+- https://public-pages-files-2025.frontiersin.org/journals/cellular-and-infection-microbiology/articles/10.3389/fcimb.2025.1611857/epub
+- https://www.businesswire.com/news/home/20250130268564/en/PHAXIAM-Provides-An-Update-On-The-Deployment-Of-Its-Strategy-To-Maximize-The-Development-Potential-Of-Phage-Therapy
+- https://www.who.int/europe/news-room/fact-sheets/item/bacteriophages-and-their-use-in-combating-antimicrobial-resistance
 
 ## Not medical advice
 This is a software prototype. Wet-lab validation and clinical governance remain the source of truth.
