@@ -491,8 +491,7 @@ rule validate_decision_bundle:
     threads: 1
     shell:
         "python scripts/validate_decision_bundle.py --ranking {input.ranking} "
-        "--evidence {input.evidence} --schema {input.schema} "
-        "&& echo. > {output}"
+        "--evidence {input.evidence} --schema {input.schema}"
 
 if RESULTS_VIEW_DIR:
     rule publish_results:

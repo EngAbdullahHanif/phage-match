@@ -1,0 +1,3 @@
+# Register reviewed feature columns here. Each entry requires source, dtype, and role.
+version: 1
+columns: {}

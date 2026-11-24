@@ -80,3 +80,9 @@ github-recovery-codes.txt
 # System installers / miscellany
 Miniconda3-latest-MacOSX-x86_64.sh
 data/real/
+
+# Local assay audit and legacy tools
+~$*
+*.npy
+/PHACTS/
+/reports/

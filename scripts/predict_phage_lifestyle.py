@@ -14,6 +14,7 @@ Outputs:
 """
 import os
 import argparse
+import shutil
 import subprocess
 import pandas as pd
 
@@ -23,7 +24,15 @@ def main():
                    help='Directory of phage genome FASTA files (nucleotide)')
     p.add_argument('-o', '--output', required=True,
                    help='Output directory for lifestyle predictions')
+    p.add_argument('--phacts', default='phacts.py', help='PHACTS executable or path')
+    p.add_argument('--prodigal', default='prodigal', help='Prodigal executable or path')
     args = p.parse_args()
+    phacts_script = shutil.which(args.phacts)
+    prodigal = shutil.which(args.prodigal)
+    if phacts_script is None:
+        p.error(f"PHACTS executable not found: {args.phacts}. Set --phacts or update PATH.")
+    if prodigal is None:
+        p.error(f"Prodigal executable not found: {args.prodigal}. Set --prodigal or update PATH.")
 
     # Ensure output dir
     os.makedirs(args.output, exist_ok=True)
@@ -43,8 +52,6 @@ def main():
     print(f"Found {len(phages)} phage files: {phages}")
     
     summary = []
-    # Path to phacts.py in the virtual environment
-    phacts_script = "/Users/mac/Documents/Development Projects/PhageMatch/env/bin/phacts.py"
     
     for fasta in phages:
         phage_id = os.path.splitext(fasta)[0]
@@ -58,14 +65,14 @@ def main():
         # Run Prodigal to predict proteins
         print(f"Running Prodigal for {phage_id}...")
         try:
-            subprocess.run(['prodigal', '-i', infile, '-a', protein_fasta], check=True)
+            subprocess.run([prodigal, '-i', infile, '-a', protein_fasta], check=True)
         except subprocess.CalledProcessError as e:
             print(f"Error running Prodigal for {phage_id}: {e}")
             summary.append({'phage': phage_id, 'lifestyle': 'error', 'probability': 0.0, 'stdev': 0.0})
             continue
 
         # Run PHACTS with protein FASTA
-        cmd = ['python3', phacts_script, protein_fasta, '-o', outfile]
+        cmd = [phacts_script, protein_fasta, '-o', outfile]
         print(f"Running PHACTS for {phage_id} with command: {' '.join(cmd)}")
         try:
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
