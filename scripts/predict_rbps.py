@@ -1,4 +1,4 @@
-#!/Users/mac/miniconda3/envs/prokka_env/bin/python
+#!/usr/bin/env python3
 
 """
 Predict receptor-binding proteins (RBPs) using HHsearch and InterProScan.
@@ -16,6 +16,7 @@ Outputs:
 """
 import os
 import argparse
+import shutil
 import subprocess
 from Bio import SeqIO
 
@@ -30,6 +31,9 @@ def main():
     parser.add_argument('-p', '--interpro', default='interproscan.sh',
                         help='Path to InterProScan script')
     args = parser.parse_args()
+    interpro = shutil.which(args.interpro)
+    if interpro is None:
+        parser.error(f"InterProScan executable not found: {args.interpro}. Set --interpro or update PATH.")
 
     # prepare output dirs
     hh_dir = os.path.join(args.output, 'hhsearch')
@@ -89,7 +93,7 @@ def main():
 
         # InterProScan
         out_ip = os.path.join(ip_dir, f"{phage_id}_interpro.tsv")
-        cmd_ip = [args.interpro, '-i', faa, '-f', 'tsv', '-o', out_ip]
+        cmd_ip = [interpro, '-i', faa, '-f', 'tsv', '-o', out_ip]
         print(f"Running InterProScan for {phage_id}")
         subprocess.run(cmd_ip, check=True)
 
