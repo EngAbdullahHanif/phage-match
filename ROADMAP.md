@@ -2,6 +2,8 @@
 
 This roadmap is intentionally contract-first: downstream consumers rely on the Decision Bundle outputs, while feature modules evolve behind stable schemas.
 
+PhageMatch will focus on host-range prediction. Assay data curation and CPU-only baseline validation come first. Structural exploration is optional follow-up work. [Part 2 product decision](docs/architecture/06_part_2_product_direction.md)
+
 ## v0.1 - Baseline MVP (contracts + runnable triage)
 - Manifest-driven IDs (`host_id`, `phage_id`) as the only primary axis
 - Snakemake DAG as the single source of truth (legacy runner deprecated)
@@ -19,10 +21,8 @@ This roadmap is intentionally contract-first: downstream consumers rely on the D
 - Add automatic Decision Bundle validation (JSON schema + CSV column checks)
 - Expand evidence bundle explanations (per-feature why)
 
-## v0.3 - Structural evidence, production-ready
-- Phage structure caching: build once per library phage
-- Host structure on-demand + optional caching per host
-- Foldseek DB indexing and fast re-runs (hours not weeks target)
+## v0.3 - Structural evidence (optional follow-up)
+- Keep structural evidence available for manual interpretation after baseline validation.
 
 ## v0.4 - Feedback loop (learning layer)
 - Ingest wet-lab outcomes (hit/no-hit, EOP where available)
