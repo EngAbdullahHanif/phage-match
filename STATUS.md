@@ -20,6 +20,16 @@ The CLI writes `data/interim/interactions.csv`, `data/meta_data/id_crosswalk.csv
 
 Use `python scripts/validate_feature_columns.py path/to/table.csv` to check a CSV or TSV header against `features_manifest.yaml`. A reviewed registration records the data source, dtype, and role. The validator rejects unregistered names and the historical assay-derived columns. The manifest starts with no feature registrations.
 
+## Phase 3 synthetic evaluation audit
+
+Run the evaluation audit from a Git checkout with the pinned core environment.
+
+```sh
+python scripts/synthetic_evaluation.py --output-dir runs
+```
+
+The command simulates equipment events and records random, held-out device, held-out site, and two-axis holdout metrics. It writes `config.yaml`, `metrics.json`, and `synthetic_evaluation.md` to a timestamped run directory. The run records the Git revision and random seed. The simulated probabilities exercise ranking, calibration, and site-level bootstrap intervals. The report provides a software audit and no evidence about biological or clinical performance.
+
 ## Work remaining
 
 - Review the unresolved IDs and workbook anomalies in the private inventory report.
