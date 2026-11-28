@@ -7,6 +7,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 
 FIELDS = (
@@ -15,6 +16,9 @@ FIELDS = (
 )
 SCORES = {"category": range(4), "binary": range(2)}
 FASTA = {".fna", ".fasta", ".fa"}
+QC_FIELDS = ("workbook", "sheet", "cell", "severity", "code", "detail")
+ALIAS_FIELDS = ("role", "source_id", "target_id", "evidence")
+REVIEW_STATES = {"confirmed", "pending", "rejected"}
 
 
 def normalize_id(value):
@@ -29,50 +33,74 @@ def blank(value):
     return value is None or isinstance(value, str) and not value.strip()
 
 
-def read_sheet(sheet, source):
+def qc_issue(issues, workbook, sheet, row, column, code, detail, *, severity="review"):
+    cell = f"{get_column_letter(column + 1)}{row}"
+    issues.append((workbook, sheet, cell, severity, code, detail))
+
+
+def read_sheet(sheet, source, issues):
     rows = iter(sheet.values)
     headers = {}
+    header_columns = {}
     for column, value in enumerate(next(rows, ())[1:], start=1):
         if blank(value):
             continue
         raw, key = normalize_id(value)
-        if any(key == previous[1] for previous in headers.values()):
-            raise ValueError(f"{source}[{sheet.title}] duplicate column ID: {key}")
+        if key in header_columns:
+            first = get_column_letter(header_columns[key] + 1)
+            qc_issue(issues, source, sheet.title, 1, column, "duplicate_header",
+                     f"Duplicates {first}1 after ID normalization", severity="error")
+        else:
+            header_columns[key] = column
         headers[column] = (raw, key)
     if not headers:
-        raise ValueError(f"{source}[{sheet.title}] has no named assay columns")
+        qc_issue(issues, source, sheet.title, 1, 0, "missing_headers", "No named assay columns",
+                 severity="error")
 
     scores = {}
+    score_locations = {}
     host_ids = set()
     ignored_cells = 0
     rows_without_ids = []
     for index, row in enumerate(rows, start=2):
         if not row or all(blank(value) for value in row):
             continue
-        ignored_cells += sum(not blank(value) and column not in headers
-                             for column, value in enumerate(row[1:], start=1))
-        if blank(row[0]):
+        missing_host = blank(row[0])
+        if missing_host:
             if any(column < len(row) and not blank(row[column]) for column in headers):
                 rows_without_ids.append(index)
-            continue
-        raw_host, host = normalize_id(row[0])
-        host_ids.add(host)
+        else:
+            raw_host, host = normalize_id(row[0])
+            host_ids.add(host)
         for column, value in enumerate(row[1:], start=1):
-            if blank(value) or column not in headers:
+            if blank(value):
+                continue
+            if column not in headers:
+                ignored_cells += 1
+                qc_issue(issues, source, sheet.title, index, column, "unnamed_column",
+                         "Populated cell under a blank header")
+                continue
+            if missing_host:
+                qc_issue(issues, source, sheet.title, index, column, "missing_host_id",
+                         f"Observation has no host ID in A{index}")
                 continue
             raw_phage, phage = headers[column]
             score = str(value).strip()
             if not re.fullmatch(r"[0-9](?:\.0+)?", score) or int(float(score)) not in SCORES[sheet.title]:
-                raise ValueError(f"{source}[{sheet.title}] invalid score at row {index}, column {column + 1}")
+                qc_issue(issues, source, sheet.title, index, column, "invalid_score",
+                         "Value outside the recorded score scale", severity="error")
+                continue
             key = (host, phage)
-            raw_and_score = (raw_host, raw_phage, int(float(score)))
             if key in scores:
-                raise ValueError(f"{source}[{sheet.title}] duplicate observations for {host} / {phage}")
-            scores[key] = raw_and_score
-    return scores, host_ids, {key for _, key in headers.values()}, ignored_cells, rows_without_ids
+                qc_issue(issues, source, sheet.title, index, column, "duplicate_observation",
+                         f"Duplicates observation at {score_locations[key]}", severity="error")
+                continue
+            score_locations[key] = f"{get_column_letter(column + 1)}{index}"
+            scores[key] = (raw_host, raw_phage, int(float(score)))
+    return scores, host_ids, header_columns, ignored_cells, rows_without_ids
 
 
-def read_assays(paths):
+def read_assays(paths, issues):
     records = []
     ids = {"host": set(), "phage": set()}
     audit = []
@@ -80,8 +108,10 @@ def read_assays(paths):
         workbook = load_workbook(path, read_only=True, data_only=True)
         try:
             if missing := SCORES.keys() - set(workbook.sheetnames):
-                raise ValueError(f"{path.name} is missing worksheet(s): {', '.join(sorted(missing))}")
-            category, binary = (read_sheet(workbook[name], path.name) for name in SCORES)
+                for name in sorted(missing):
+                    issues.append((path.name, name, "", "error", "missing_sheet", "Required worksheet is absent"))
+                continue
+            category, binary = (read_sheet(workbook[name], path.name, issues) for name in SCORES)
         finally:
             workbook.close()
         for _, hosts, phages, _, _ in (category, binary):
@@ -89,7 +119,11 @@ def read_assays(paths):
             ids["phage"].update(phages)
         category_scores, _, category_ids, category_ignored, category_orphans = category
         binary_scores, _, binary_ids, binary_ignored, binary_orphans = binary
-        audit.append((path.name, category_ignored, binary_ignored, category_ids ^ binary_ids,
+        for sheet, present, other in (("category", category_ids, binary_ids), ("binary", binary_ids, category_ids)):
+            for name in sorted(present.keys() - other.keys()):
+                qc_issue(issues, path.name, sheet, 1, present[name], "header_mismatch",
+                         "ID absent from the other worksheet header")
+        audit.append((path.name, category_ignored, binary_ignored, category_ids.keys() ^ binary_ids.keys(),
                       category_orphans, binary_orphans))
         for host, phage in sorted(category_scores.keys() | binary_scores.keys()):
             first = category_scores.get((host, phage))
@@ -105,20 +139,25 @@ def read_assays(paths):
 
 
 def file_coverage(ids, roots, aliases_path=None):
-    mappings = defaultdict(dict)
+    mappings = defaultdict(lambda: defaultdict(list))
     if aliases_path:
         with aliases_path.open(newline="", encoding="utf-8-sig") as stream:
-            fields = ("role", "source_id", "target_id", "evidence")
             reader = csv.DictReader(stream, delimiter="\t")
-            if tuple(reader.fieldnames or ()) != fields:
-                raise ValueError(f"{aliases_path} must use these columns: {', '.join(fields)}")
+            fields = tuple(reader.fieldnames or ())
+            if fields not in (ALIAS_FIELDS, (*ALIAS_FIELDS, "review_status")):
+                raise ValueError(f"{aliases_path} must use these columns: {', '.join((*ALIAS_FIELDS, 'review_status'))}")
+            seen = set()
             for row in reader:
-                role, source, target, evidence = ((row[key] or "").strip() for key in fields)
+                role, source, target, evidence = ((row[key] or "").strip() for key in ALIAS_FIELDS)
                 if role == "prophage":
                     continue
-                if role not in roots or not all((source, target, evidence)) or source in mappings[role]:
-                    raise ValueError(f"Invalid or duplicate alias for {role}: {source}")
-                mappings[role][source] = (target, evidence)
+                status = (row.get("review_status", "confirmed") or "").strip()
+                key = (role, source, target)
+                if (None in row or role not in roots or not source or not target or status not in REVIEW_STATES
+                        or status == "confirmed" and not evidence or key in seen):
+                    raise ValueError(f"Invalid or duplicate alias at {aliases_path}:{reader.line_num}")
+                seen.add(key)
+                mappings[role][source].append((target, evidence, status))
 
     entries = []
     for role, root in roots.items():
@@ -131,14 +170,24 @@ def file_coverage(ids, roots, aliases_path=None):
             files[path.stem] = path
         used = set()
         for name in sorted(ids[role]):
-            target, evidence = mappings[role].get(name, (name, "Exact ID"))
-            if name in files and target != name:
-                raise ValueError(f"Documented {role} alias conflicts with exact match: {name}")
+            aliases = mappings[role][name]
+            confirmed = {target: evidence for target, evidence, status in aliases if status == "confirmed"}
+            pending = sorted(target for target, _, status in aliases if status == "pending")
+            if name in files:
+                confirmed.setdefault(name, "Exact ID")
+            if len(confirmed) > 1:
+                detail = "Competing mappings: " + ", ".join(sorted(confirmed))
+                entries.append((role, name, "", "", "conflict", detail))
+                continue
+            if not confirmed and pending:
+                entries.append((role, name, "", "", "pending_review", "Candidates: " + ", ".join(pending)))
+                continue
+            target, evidence = next(iter(confirmed.items()), (name, ""))
             if target in files:
                 entries.append((role, name, target, str(files[target]), "matched", evidence))
                 used.add(target)
             else:
-                entries.append((role, name, target, "", "genome_missing", ""))
+                entries.append((role, name, target, "", "genome_missing", evidence))
         for name in sorted(files.keys() - used):
             entries.append((role, "", name, str(files[name]), "label_missing", ""))
     return entries
@@ -152,7 +201,7 @@ def write_csv(path, fields, rows):
         writer.writerows(rows)
 
 
-def inventory_text(records, coverage, audit):
+def inventory_text(records, coverage, audit, issues):
     matched = {role: {row[1] for row in coverage if row[0] == role and row[4] == "matched"}
                for role in ("host", "phage")}
     covered = sum(row[2] in matched["host"] and row[3] in matched["phage"] for row in records)
@@ -161,6 +210,9 @@ def inventory_text(records, coverage, audit):
              f"- Observations with confirmed local IDs on both sides: {covered}",
              f"- Observations with unresolved local IDs: {len(records) - covered}",
              "- Binary positive counts use the workbook's recorded value of 1.", ""]
+    coverage_counts = Counter(row[4] for row in coverage)
+    lines.append("- Crosswalk statuses: " + ", ".join(f"{status}: {count}" for status, count in sorted(coverage_counts.items())))
+    lines.append(f"- Workbook QC entries: {len(issues)}")
     for name, column in (("Category", 4), ("Binary", 5)):
         counts = Counter(row[column] for row in records)
         values = ", ".join(f"{key}: {counts[key]}" for key in sorted(counts.keys() - {None}))
@@ -170,7 +222,7 @@ def inventory_text(records, coverage, audit):
         positives = Counter(row[index] for row in records if row[5] == 1)
         lines.extend(("", f"## Recorded binary positives by {role}", ""))
         lines.extend(f"- `{name}`: {positives[name]} / {totals[name]}" for name in sorted(totals))
-        unresolved = [row[1] for row in coverage if row[0] == role and row[4] == "genome_missing"]
+        unresolved = [row[1] for row in coverage if row[0] == role and row[1] and row[4] != "matched"]
         lines.extend(("", f"### Unresolved {role} IDs ({len(unresolved)})", "",
                       ", ".join(f"`{name}`" for name in unresolved) or "None"))
     lines.extend(("", "## Workbook review", ""))
@@ -191,6 +243,7 @@ def main(argv=None):
     parser.add_argument("--interactions", type=Path, default=Path("data/interim/interactions.csv"))
     parser.add_argument("--crosswalk", type=Path, default=Path("data/meta_data/id_crosswalk.csv"))
     parser.add_argument("--report", type=Path, default=Path("reports/data_inventory.md"))
+    parser.add_argument("--qc", type=Path, default=Path("reports/assay_qc.csv"))
     parser.add_argument("--allow-unresolved", action="store_true", help="Return success with unresolved IDs")
     args = parser.parse_args(argv)
     try:
@@ -199,15 +252,19 @@ def main(argv=None):
         inputs = {path.resolve() for path in args.workbooks}
         if args.aliases:
             inputs.add(args.aliases.resolve())
-        outputs = {path.resolve() for path in (args.interactions, args.crosswalk, args.report)}
-        if len(outputs) != 3 or inputs & outputs:
+        outputs = {path.resolve() for path in (args.interactions, args.crosswalk, args.report, args.qc)}
+        if len(outputs) != 4 or inputs & outputs:
             raise ValueError("Output paths must be distinct and separate from source files")
-        records, ids, audit = read_assays(args.workbooks)
+        issues = []
+        records, ids, audit = read_assays(args.workbooks, issues)
+        write_csv(args.qc, QC_FIELDS, issues)
+        if any(issue[3] == "error" for issue in issues):
+            parser.exit(2, f"Workbook QC found blocking errors. Review {args.qc}.\n")
         coverage = file_coverage(ids, {"host": args.host_dir, "phage": args.phage_dir}, args.aliases)
         write_csv(args.interactions, FIELDS, records)
         write_csv(args.crosswalk, ("role", "label_id", "genome_id", "path", "status", "evidence"), coverage)
         args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(inventory_text(records, coverage, audit), encoding="utf-8")
+        args.report.write_text(inventory_text(records, coverage, audit, issues), encoding="utf-8")
     except (OSError, ValueError, KeyError) as exc:
         parser.exit(2, f"Assay inventory error: {exc}\n")
     unresolved = sum(row[4] != "matched" for row in coverage)

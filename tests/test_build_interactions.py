@@ -3,7 +3,7 @@ import csv
 import pytest
 from openpyxl import Workbook
 
-from scripts.build_interactions import main
+from scripts.build_interactions import file_coverage, main
 
 
 def table(path):
@@ -41,10 +41,10 @@ def test_workbooks_provenance_and_strict_file_coverage(tmp_path):
     (phages / "unlabeled.fna").touch()
     aliases = tmp_path / "aliases.tsv"
     aliases.write_text("role\tsource_id\ttarget_id\tevidence\nphage\tsample-a\trenamed\tfixture record\n")
-    output, crosswalk, report = (tmp_path / name for name in ("assays.csv", "ids.csv", "inventory.md"))
+    output, crosswalk, report, qc = (tmp_path / name for name in ("assays.csv", "ids.csv", "inventory.md", "qc.csv"))
     args = [str(book_a), str(book_b), "--host-dir", str(hosts), "--phage-dir", str(phages),
             "--aliases", str(aliases), "--interactions", str(output), "--crosswalk", str(crosswalk),
-            "--report", str(report)]
+            "--report", str(report), "--qc", str(qc)]
     with pytest.raises(SystemExit) as error:
         main(args)
     assert error.value.code == 2
@@ -58,4 +58,54 @@ def test_workbooks_provenance_and_strict_file_coverage(tmp_path):
     assert {row["status"] for row in table(crosswalk)} == {"matched", "genome_missing", "label_missing"}
     assert "binary [3]" in report.read_text()
     assert "on both sides: 1" in report.read_text()
+    assert {(row["cell"], row["code"]) for row in table(qc)} == {
+        ("D2", "unnamed_column"), ("B3", "missing_host_id"), ("C3", "missing_host_id"),
+    }
     main([*args, "--allow-unresolved"])
+
+
+
+def test_blocking_workbook_issues_report_cells_without_replacing_exports(tmp_path):
+    workbook = Workbook()
+    category = workbook.active
+    category.title = "category"
+    category.append(["host", "a", "b"])
+    category.append(["first", 1, 9])
+    category.append(["first", 2, None])
+    binary = workbook.create_sheet("binary")
+    binary.append(["host", "a"])
+    binary.append(["first", 0])
+    book = tmp_path / "synthetic.xlsx"
+    workbook.save(book)
+    qc = tmp_path / "qc.csv"
+    output = tmp_path / "assays.csv"
+    output.write_text("prior report\n")
+    with pytest.raises(SystemExit) as error:
+        main([str(book), "--qc", str(qc), "--interactions", str(output), "--allow-unresolved"])
+    assert error.value.code == 2
+    assert output.read_text() == "prior report\n"
+    assert {(row["cell"], row["code"], row["severity"]) for row in table(qc)} == {
+        ("C1", "header_mismatch", "review"), ("C2", "invalid_score", "error"),
+        ("B3", "duplicate_observation", "error"),
+    }
+    assert next(row for row in table(qc) if row["cell"] == "B3")["detail"].endswith("B2")
+
+
+def test_reviewed_aliases_distinguish_confirmed_pending_conflicts_and_missing(tmp_path):
+    for stem in ("exact", "target", "other"):
+        (tmp_path / f"{stem}.fna").touch()
+    aliases = tmp_path / "aliases.tsv"
+    aliases.write_text(
+        "role\tsource_id\ttarget_id\tevidence\treview_status\n"
+        "host\texact\tother\tregistry contradiction\tconfirmed\n"
+        "host\tconfirmed\ttarget\tregistry entry\tconfirmed\n"
+        "host\tpending\tother\t\tpending\n"
+        "host\trejected\tother\tregistry contradicts candidate\trejected\n"
+    )
+    coverage = file_coverage({"host": {"exact", "confirmed", "pending", "rejected"}}, {"host": tmp_path}, aliases)
+    assert {row[1]: row[4] for row in coverage if row[1]} == {
+        "confirmed": "matched", "exact": "conflict", "pending": "pending_review", "rejected": "genome_missing",
+    }
+    aliases.write_text(aliases.read_text().replace("registry entry", ""))
+    with pytest.raises(ValueError, match="Invalid or duplicate alias"):
+        file_coverage({"host": {"confirmed"}}, {"host": tmp_path}, aliases)
