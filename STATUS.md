@@ -14,7 +14,7 @@ python scripts/build_interactions.py \
   data/meta_data/sst_e_coli_phages.xlsx
 ```
 
-The CLI writes `data/interim/interactions.csv`, `data/meta_data/id_crosswalk.csv`, and `reports/data_inventory.md`. It returns an error if the crosswalk includes unresolved IDs. Use `--allow-unresolved` for a reporting-only run. File coverage is reported independently of assay target definition and eligibility. See [data provenance](MANIFEST.md) and the [label definition](docs/label_definition.md).
+The CLI writes `data/interim/interactions.csv`, `data/meta_data/id_crosswalk.csv`, `reports/data_inventory.md`, and `reports/assay_qc.csv`. See the [assay QC and provenance guide](docs/assay_qc.md) for issue handling and reviewed aliases. It returns an error if the crosswalk includes unresolved IDs. Use `--allow-unresolved` for a reporting-only run. File coverage is reported independently of assay target definition and eligibility. See [data provenance](MANIFEST.md) and the [label definition](docs/label_definition.md).
 
 ## Feature table checks
 
