@@ -22,7 +22,7 @@ PhageMatch will focus on host-range prediction. Assay data curation and CPU-only
 - Expand evidence bundle explanations (per-feature why)
 
 ## v0.3 - Structural evidence (optional follow-up)
-- Keep structural evidence available for manual interpretation after baseline validation.
+- Keep structural evidence available for manual interpretation after baseline validation. The [delivery status](docs/roadmap.md) records what has been verified and the remaining gates.
 
 ## v0.4 - Feedback loop (learning layer)
 - Ingest wet-lab outcomes (hit/no-hit, EOP where available)
